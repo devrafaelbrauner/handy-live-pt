@@ -158,9 +158,9 @@ jobs:
             fi
           fi
 
-          if [[ "$RUNNER_OS" == "Windows" || "$updater_signing" != "true" ]]; then
+          if [[ "$platform_signing" != "true" || "$updater_signing" != "true" ]]; then
             jq \
-              --argjson keep_windows_signing $([[ "$RUNNER_OS" == "Windows" && "$platform_signing" == "true" ]] && echo true || echo false) \
+              --argjson keep_windows_signing $([[ "$platform_signing" == "true" ]] && echo true || echo false) \
               --argjson keep_updater_signing $([[ "$updater_signing" == "true" ]] && echo true || echo false) \
               'if $keep_windows_signing then . else del(.bundle.windows.signCommand) end
                | if $keep_updater_signing then . else .bundle.createUpdaterArtifacts = false end' \
