@@ -158,12 +158,13 @@ jobs:
             fi
           fi
 
-          if [[ "$RUNNER_OS" == "Windows" && "$platform_signing" != "true" ]]; then
-            jq 'del(.bundle.windows.signCommand)' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
-          fi
-
-          if [[ "$updater_signing" != "true" ]]; then
-            jq '.bundle.createUpdaterArtifacts = false' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
+          if [[ "$RUNNER_OS" == "Windows" || "$updater_signing" != "true" ]]; then
+            jq \
+              --argjson keep_windows_signing $([[ "$RUNNER_OS" == "Windows" && "$platform_signing" == "true" ]] && echo true || echo false) \
+              --argjson keep_updater_signing $([[ "$updater_signing" == "true" ]] && echo true || echo false) \
+              'if $keep_windows_signing then . else del(.bundle.windows.signCommand) end
+               | if $keep_updater_signing then . else .bundle.createUpdaterArtifacts = false end' \
+              src-tauri/tauri.conf.json > tauri.conf.json.tmp && mv tauri.conf.json.tmp src-tauri/tauri.conf.json
           fi
 
           echo "platform=$platform_signing" >> "$GITHUB_OUTPUT"
