@@ -86,6 +86,15 @@ jobs:
           echo "Application version from tauri.conf.json: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare Tauri config copy
+        id: tauri-config
+        shell: bash
+        run: |
+          CONFIG_PATH="$RUNNER_TEMP/tauri.conf.json"
+          cp src-tauri/tauri.conf.json "$CONFIG_PATH"
+          echo "TAURI_CONFIG_PATH=$CONFIG_PATH" >> "$GITHUB_ENV"
+          echo "path=$CONFIG_PATH" >> "$GITHUB_OUTPUT"
+
       - name: Determine build profile
         id: build-profile
         shell: bash
@@ -164,7 +173,7 @@ jobs:
               --argjson keep_updater_signing $([[ "$updater_signing" == "true" ]] && echo true || echo false) \
               'if $keep_windows_signing then . else del(.bundle.windows.signCommand) end
                | if $keep_updater_signing then . else .bundle.createUpdaterArtifacts = false end' \
-              src-tauri/tauri.conf.json > tauri.conf.json.tmp && mv tauri.conf.json.tmp src-tauri/tauri.conf.json
+              "$TAURI_CONFIG_PATH" > tauri.conf.json.tmp && mv tauri.conf.json.tmp "$TAURI_CONFIG_PATH"
           fi
 
           echo "platform=$platform_signing" >> "$GITHUB_OUTPUT"
@@ -439,7 +448,7 @@ jobs:
           # Bundle the versioned dylib (matches the install name @rpath/libonnxruntime.1.24.2.dylib)
           jq --arg lib "$ORT_DIR/lib/libonnxruntime.${ORT_VERSION}.dylib" \
             '.bundle.macOS.frameworks = [$lib]' \
-            src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
+            "$TAURI_CONFIG_PATH" > tmp.json && mv tmp.json "$TAURI_CONFIG_PATH"
 
       - name: Install ONNX Runtime (x86_64 Linux, Ubuntu 22.04)
         if: contains(inputs.platform, 'ubuntu-22.04') && inputs.target == 'x86_64-unknown-linux-gnu'
@@ -464,7 +473,7 @@ jobs:
           # deb.files key = destination in package, value = source on disk
           jq --arg so1 "$ORT_DIR/lib/libonnxruntime.so.1" \
             '.bundle.linux.deb.files["/usr/lib/Handy/libonnxruntime.so.1"] = $so1' \
-            src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
+            "$TAURI_CONFIG_PATH" > tmp.json && mv tmp.json "$TAURI_CONFIG_PATH"
 
       # Windows x64 links a BASELINE ONNX Runtime dynamically instead of statically
       # embedding pyke's default download-binaries build, which is compiled with a
@@ -599,7 +608,7 @@ jobs:
           releaseName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
           releaseId: ${{ inputs.release-id }}
           assetNamePattern: ${{ steps.patch-release-name.outputs.platform }}
-          args: ${{ inputs.build-args }}
+          args: ${{ format('--config {0} {1}', steps.tauri-config.outputs.path, inputs.build-args) }}
 
       # tauri-action uploads release assets before returning. All AppImage
       # filtering therefore happens inside linuxdeploy above; this verifies the
