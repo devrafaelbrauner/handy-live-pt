@@ -614,7 +614,7 @@ jobs:
           releaseName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
           releaseId: ${{ inputs.release-id }}
           assetNamePattern: ${{ steps.patch-release-name.outputs.platform }}
-          args: ${{ format('--config {0} {1}', steps.tauri-config.outputs.path, inputs.build-args) }}
+          args: ${{ inputs.build-args != '' && format('--config {0} {1}', steps.tauri-config.outputs.path, inputs.build-args) || format('--config {0}', steps.tauri-config.outputs.path) }}
 
       # tauri-action uploads release assets before returning. All AppImage
       # filtering therefore happens inside linuxdeploy above; this verifies the
