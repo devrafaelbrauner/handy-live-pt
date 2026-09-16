@@ -1031,9 +1031,12 @@ mod tests {
 
     #[test]
     fn live_overlay_uses_streaming_states_only_for_streaming_models() {
+        // Exhaustive: every OverlayStyle x is_streaming combination.
         assert!(should_use_streaming_overlay(OverlayStyle::Live, true));
         assert!(!should_use_streaming_overlay(OverlayStyle::Live, false));
         assert!(!should_use_streaming_overlay(OverlayStyle::Minimal, true));
+        assert!(!should_use_streaming_overlay(OverlayStyle::Minimal, false));
         assert!(!should_use_streaming_overlay(OverlayStyle::None, true));
+        assert!(!should_use_streaming_overlay(OverlayStyle::None, false));
     }
 }
