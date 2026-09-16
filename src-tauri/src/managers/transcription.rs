@@ -5,8 +5,8 @@ use crate::audio_toolkit::{
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::model::{EngineType, ModelManager};
 use crate::settings::{
-    get_settings, AppSettings, ModelUnloadTimeout, OrtAcceleratorSetting,
-    TranscribeAcceleratorSetting,
+    get_settings, stream_extension_for_preset, AppSettings, ModelUnloadTimeout,
+    OrtAcceleratorSetting, StreamFamilyKind, TranscribeAcceleratorSetting,
 };
 use anyhow::Result;
 use log::{debug, error, info, warn};
@@ -20,8 +20,8 @@ use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_specta::Event;
 use transcribe_cpp::{
-    Backend, Feature, Model, ModelOptions, RunExtension, RunOptions, Session, StreamOptions, Task,
-    WhisperRunOptions,
+    Backend, ExtSlot, Feature, Model, ModelOptions, RunExtension, RunOptions, Session,
+    StreamExtension, StreamOptions, Task, WhisperRunOptions,
 };
 use transcribe_rs::{
     onnx::{
@@ -35,6 +35,13 @@ use transcribe_rs::{
     },
     SpeechModel, TranscribeOptions,
 };
+
+/// Stream-slot family-extension kinds, as four-character codes in the engine's
+/// ABI. Used to probe which native streaming strategy a model accepts.
+/// "PKBS" — Parakeet chunked-attention buffered streaming.
+const PARAKEET_BUF: u32 = 0x53424B50;
+/// "PKST" — Parakeet cache-aware streaming.
+const PARAKEET_STREAM: u32 = 0x54534B50;
 
 const STREAM_PERF_LOG_INTERVAL: Duration = Duration::from_secs(5);
 const STREAM_FINALIZE_REPLY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -966,9 +973,36 @@ impl TranscriptionManager {
             // call `session.model()` once it exists.
             let backend = session.model().backend();
 
-            // StreamOptions::default() uses CommitPolicy::Auto and lets the
-            // family pick its own streaming strategy (no family-specific ext).
-            let mut stream = match session.stream(&run_options, &StreamOptions::default()) {
+            // Latency/accuracy preset. Probe which native streaming strategy
+            // this model accepts (buffered first, mirroring upstream #1666),
+            // then map the preset onto that family's knobs. The default preset
+            // yields `None`, i.e. exactly `StreamOptions::default()` — the
+            // family keeps picking its own strategy, unchanged.
+            //
+            // commit_policy and stable_prefix_agreement_n stay at their
+            // defaults (CommitPolicy::Auto, library-default agreement N).
+            let family_kind = if session.model().accepts_ext(ExtSlot::Stream, PARAKEET_BUF) {
+                Some(StreamFamilyKind::Buffered)
+            } else if session
+                .model()
+                .accepts_ext(ExtSlot::Stream, PARAKEET_STREAM)
+            {
+                Some(StreamFamilyKind::CacheAware)
+            } else {
+                None
+            };
+            let family: Option<StreamExtension> = family_kind
+                .and_then(|kind| stream_extension_for_preset(settings.stream_latency_preset, kind));
+            debug!(
+                "Stream latency preset {:?} on family {:?} -> extension {:?}",
+                settings.stream_latency_preset, family_kind, family
+            );
+            let stream_options = StreamOptions {
+                family,
+                ..Default::default()
+            };
+
+            let mut stream = match session.stream(&run_options, &stream_options) {
                 Ok(s) => s,
                 Err(e) => {
                     error!("Failed to begin stream: {}", e);

@@ -274,6 +274,16 @@
         "label": "Garder le micro ouvert entre les transcriptions",
         "description": "Maintient le flux du microphone ouvert pendant 30 secondes après l'arrêt de l'enregistrement, réduisant la latence pour les transcriptions consécutives. Peut dégrader la qualité audio Bluetooth."
       },
+      "streamLatencyPreset": {
+        "label": "Latence du streaming",
+        "description": "Arbitre entre latence et précision pour les modèles avec streaming natif. Une latence plus faible affiche le texte plus tôt, tandis que le maximum conserve les valeurs par défaut du modèle. Les modèles sans streaming natif et la transcription classique ignorent ce réglage.",
+        "options": {
+          "lowLatency": "Latence faible",
+          "balanced": "Équilibré",
+          "highLatency": "Latence élevée",
+          "maximum": "Précision maximale (par défaut)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Accélération Whisper",

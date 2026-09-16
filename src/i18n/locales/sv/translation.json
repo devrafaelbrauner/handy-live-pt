@@ -274,6 +274,16 @@
         "label": "Håll mikrofonen öppen mellan transkriptioner",
         "description": "Håller mikrofonströmmen öppen i 30 sekunder efter att inspelningen avslutats, vilket minskar latensen för transkriptioner efter varandra. Kan försämra Bluetooth-ljudkvaliteten medan den är aktiv."
       },
+      "streamLatencyPreset": {
+        "label": "Strömningslatens",
+        "description": "Avväger strömningslatens mot noggrannhet för modeller med inbyggd strömning. Lägre latens visar texten tidigare, medan maximal behåller modellens egna standardvärden. Modeller utan inbyggd strömning och vanlig transkribering ignorerar detta.",
+        "options": {
+          "lowLatency": "Låg latens",
+          "balanced": "Balanserad",
+          "highLatency": "Hög latens",
+          "maximum": "Maximal noggrannhet (standard)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Whisper-acceleration",

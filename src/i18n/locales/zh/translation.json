@@ -274,6 +274,16 @@
         "label": "在转录之间保持麦克风开启",
         "description": "录音停止后保持麦克风流开启30秒，减少连续转录时的延迟。激活时可能会降低蓝牙音频质量。"
       },
+      "streamLatencyPreset": {
+        "label": "流式转写延迟",
+        "description": "在支持原生流式转写的模型上权衡延迟与准确度。延迟越低，文字出现得越早；最高准确度则保留模型自身的默认设置。不支持流式转写的模型和普通转写会忽略此项。",
+        "options": {
+          "lowLatency": "低延迟",
+          "balanced": "均衡",
+          "highLatency": "高延迟",
+          "maximum": "最高准确度（默认）"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Whisper 加速",

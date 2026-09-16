@@ -23,7 +23,7 @@ use crate::settings::APPLE_INTELLIGENCE_DEFAULT_MODEL_ID;
 use crate::settings::{
     self, get_settings, AutoSubmitKey, ClipboardHandling, KeyboardImplementation, LLMPrompt,
     OverlayPosition, OverlayStyle, PasteMethod, ShortcutActivation, ShortcutBinding, SoundTheme,
-    Theme, TypingTool, VadBackend, APPLE_INTELLIGENCE_PROVIDER_ID,
+    StreamLatencyPreset, Theme, TypingTool, VadBackend, APPLE_INTELLIGENCE_PROVIDER_ID,
 };
 use crate::tray;
 
@@ -1272,6 +1272,18 @@ pub fn change_append_trailing_space_setting(app: AppHandle, enabled: bool) -> Re
 pub fn change_lazy_stream_close_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.lazy_stream_close = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_stream_latency_preset_setting(
+    app: AppHandle,
+    preset: StreamLatencyPreset,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.stream_latency_preset = preset;
     settings::write_settings(&app, settings);
     Ok(())
 }

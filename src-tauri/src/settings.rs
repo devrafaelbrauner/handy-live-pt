@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::fmt;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
+use transcribe_cpp::{ParakeetBufferedStreamOptions, ParakeetStreamOptions, StreamExtension};
 
 pub const APPLE_INTELLIGENCE_PROVIDER_ID: &str = "apple_intelligence";
 pub const APPLE_INTELLIGENCE_DEFAULT_MODEL_ID: &str = "Apple Intelligence";
@@ -143,6 +144,84 @@ pub enum ModelUnloadTimeout {
     Min15,
     Hour1,
     Sec15, // Debug mode only
+}
+
+/// Latency/accuracy trade-off for models with native streaming support
+/// (Nemotron 3.5 ASR Streaming, Nemotron Speech, Parakeet Unified).
+///
+/// Variants are ordered by increasing latency — and therefore increasing
+/// accuracy, since the family gets more right-hand context before it commits.
+///
+/// [`StreamLatencyPreset::Maximum`] is the default and deliberately maps to
+/// *no* family extension at all, so the engine keeps its own native defaults
+/// (cache-aware `att_context_right` 13 / buffered `(5600, 1040, 1040)`). That
+/// makes the default byte-identical to the behaviour before this setting
+/// existed. Models without a native streaming path ignore the setting
+/// entirely, and batch transcription never reads it.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamLatencyPreset {
+    LowLatency,
+    Balanced,
+    HighLatency,
+    #[default]
+    Maximum,
+}
+
+/// Which native streaming strategy the loaded model advertises. Probed from
+/// the model's accepted stream-slot extension kinds; see the callers in
+/// `managers::transcription`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamFamilyKind {
+    /// Cache-aware streaming (`ParakeetStream`), tuned via `att_context_right`.
+    CacheAware,
+    /// Chunked-attention buffered streaming (`ParakeetBuffered`), tuned via
+    /// the left/chunk/right window in milliseconds.
+    Buffered,
+}
+
+/// Left context (ms) for buffered streaming. Held constant across the speed
+/// tiers: only the chunk/right window trades latency for accuracy.
+const BUFFERED_STREAM_LEFT_MS: i32 = 5600;
+
+/// Map a preset onto the family extension for a model of `kind`.
+///
+/// Pure and self-contained (no Tauri handles, no engine state) so the tier
+/// table stays unit-testable. `None` means "send no family extension", which
+/// is how [`StreamLatencyPreset::Maximum`] preserves the engine's native
+/// defaults.
+pub fn stream_extension_for_preset(
+    preset: StreamLatencyPreset,
+    kind: StreamFamilyKind,
+) -> Option<StreamExtension> {
+    match kind {
+        StreamFamilyKind::CacheAware => {
+            let att_context_right = match preset {
+                StreamLatencyPreset::LowLatency => 0,
+                StreamLatencyPreset::Balanced => 3,
+                StreamLatencyPreset::HighLatency => 6,
+                StreamLatencyPreset::Maximum => return None,
+            };
+            Some(StreamExtension::ParakeetStream(ParakeetStreamOptions {
+                att_context_right: Some(att_context_right),
+            }))
+        }
+        StreamFamilyKind::Buffered => {
+            let (chunk_ms, right_ms) = match preset {
+                StreamLatencyPreset::LowLatency => (160, 160),
+                StreamLatencyPreset::Balanced => (160, 320),
+                StreamLatencyPreset::HighLatency => (560, 560),
+                StreamLatencyPreset::Maximum => return None,
+            };
+            Some(StreamExtension::ParakeetBuffered(
+                ParakeetBufferedStreamOptions {
+                    left_ms: Some(BUFFERED_STREAM_LEFT_MS),
+                    chunk_ms: Some(chunk_ms),
+                    right_ms: Some(right_ms),
+                },
+            ))
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
@@ -469,6 +548,10 @@ pub struct AppSettings {
     pub experimental_enabled: bool,
     #[serde(default)]
     pub lazy_stream_close: bool,
+    /// Latency/accuracy trade-off for natively streaming models. Defaults to
+    /// `Maximum`, i.e. no family override.
+    #[serde(default)]
+    pub stream_latency_preset: StreamLatencyPreset,
     #[serde(default)]
     pub keyboard_implementation: KeyboardImplementation,
     #[serde(default = "default_show_tray_icon")]
@@ -637,6 +720,10 @@ fn default_app_language() -> String {
     tauri_plugin_os::locale()
         .map(|l| l.replace('_', "-"))
         .unwrap_or_else(|| "en".to_string())
+}
+
+fn default_stream_latency_preset() -> StreamLatencyPreset {
+    StreamLatencyPreset::Maximum
 }
 
 fn default_show_tray_icon() -> bool {
@@ -954,6 +1041,7 @@ pub fn get_default_settings() -> AppSettings {
         theme: default_theme(),
         experimental_enabled: false,
         lazy_stream_close: false,
+        stream_latency_preset: default_stream_latency_preset(),
         keyboard_implementation: KeyboardImplementation::default(),
         show_tray_icon: default_show_tray_icon(),
         paste_delay_ms: default_paste_delay_ms(),
@@ -1354,6 +1442,7 @@ mod tests {
             "app_language": "en",
             "experimental_enabled": false,
             "lazy_stream_close": false,
+            "stream_latency_preset": "maximum",
             "keyboard_implementation": "handy_keys",
             "show_tray_icon": true,
             "paste_delay_ms": 60,
@@ -1712,5 +1801,109 @@ mod tests {
         let out = format!("{:?}", map);
         assert!(!out.contains("secret"));
         assert!(out.contains("[REDACTED]"));
+    }
+
+    /// The default preset must send no family extension at all, on either
+    /// streaming family. That is what keeps today's behaviour byte-identical:
+    /// `StreamOptions { family: None, .. } == StreamOptions::default()`.
+    #[test]
+    fn maximum_preset_sends_no_family_extension() {
+        assert_eq!(
+            stream_extension_for_preset(StreamLatencyPreset::Maximum, StreamFamilyKind::CacheAware),
+            None
+        );
+        assert_eq!(
+            stream_extension_for_preset(StreamLatencyPreset::Maximum, StreamFamilyKind::Buffered),
+            None
+        );
+        assert_eq!(StreamLatencyPreset::default(), StreamLatencyPreset::Maximum);
+    }
+
+    #[test]
+    fn cache_aware_presets_map_to_att_context_right_tiers() {
+        let right = |preset| match stream_extension_for_preset(preset, StreamFamilyKind::CacheAware)
+        {
+            Some(StreamExtension::ParakeetStream(opts)) => opts.att_context_right,
+            other => panic!("expected a ParakeetStream extension, got {:?}", other),
+        };
+
+        assert_eq!(right(StreamLatencyPreset::LowLatency), Some(0));
+        assert_eq!(right(StreamLatencyPreset::Balanced), Some(3));
+        assert_eq!(right(StreamLatencyPreset::HighLatency), Some(6));
+    }
+
+    #[test]
+    fn buffered_presets_map_to_window_tiers() {
+        let window = |preset| match stream_extension_for_preset(preset, StreamFamilyKind::Buffered)
+        {
+            Some(StreamExtension::ParakeetBuffered(opts)) => {
+                (opts.left_ms, opts.chunk_ms, opts.right_ms)
+            }
+            other => panic!("expected a ParakeetBuffered extension, got {:?}", other),
+        };
+
+        assert_eq!(
+            window(StreamLatencyPreset::LowLatency),
+            (Some(5600), Some(160), Some(160))
+        );
+        assert_eq!(
+            window(StreamLatencyPreset::Balanced),
+            (Some(5600), Some(160), Some(320))
+        );
+        assert_eq!(
+            window(StreamLatencyPreset::HighLatency),
+            (Some(5600), Some(560), Some(560))
+        );
+    }
+
+    /// Latency rises monotonically with the tier order, on both families.
+    #[test]
+    fn preset_tiers_increase_in_latency() {
+        let right_context = |preset| {
+            match stream_extension_for_preset(preset, StreamFamilyKind::CacheAware) {
+                Some(StreamExtension::ParakeetStream(opts)) => opts.att_context_right.unwrap(),
+                _ => i32::MAX, // Maximum: the engine's native (largest) context.
+            }
+        };
+        assert!(
+            right_context(StreamLatencyPreset::LowLatency)
+                < right_context(StreamLatencyPreset::Balanced)
+        );
+        assert!(
+            right_context(StreamLatencyPreset::Balanced)
+                < right_context(StreamLatencyPreset::HighLatency)
+        );
+        assert!(
+            right_context(StreamLatencyPreset::HighLatency)
+                < right_context(StreamLatencyPreset::Maximum)
+        );
+    }
+
+    /// A store written before this setting existed must load as `Maximum`, and
+    /// every variant must survive a write/read round-trip under its
+    /// snake_case wire name.
+    #[test]
+    fn stream_latency_preset_defaults_and_round_trips() {
+        let settings: AppSettings = serde_json::from_value(serde_json::json!({}))
+            .expect("a store missing the key must fall back to the default");
+        assert_eq!(settings.stream_latency_preset, StreamLatencyPreset::Maximum);
+        assert_eq!(
+            default_settings_json()["stream_latency_preset"],
+            serde_json::json!("maximum")
+        );
+
+        for (preset, wire) in [
+            (StreamLatencyPreset::LowLatency, "low_latency"),
+            (StreamLatencyPreset::Balanced, "balanced"),
+            (StreamLatencyPreset::HighLatency, "high_latency"),
+            (StreamLatencyPreset::Maximum, "maximum"),
+        ] {
+            let json = serde_json::to_value(preset).unwrap();
+            assert_eq!(json, serde_json::json!(wire));
+            assert_eq!(
+                serde_json::from_value::<StreamLatencyPreset>(json).unwrap(),
+                preset
+            );
+        }
     }
 }
