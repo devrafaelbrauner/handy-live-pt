@@ -284,6 +284,15 @@
           "maximum": "Précision maximale (par défaut)"
         }
       },
+      "liveMode": {
+        "label": "Mode en direct",
+        "description": "Affiche le texte pendant que vous parlez avec les modèles sans streaming natif (famille Whisper). L'aperçu transcrit chaque phrase à chaque pause ; le texte collé provient toujours de la transcription de l'enregistrement complet à l'arrêt. Utilise du calcul supplémentaire pendant l'enregistrement.",
+        "options": {
+          "standard": "Standard (par défaut)",
+          "preview": "Aperçu aux pauses",
+          "chunksPaste": "Coller par segments (bientôt)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Accélération Whisper",

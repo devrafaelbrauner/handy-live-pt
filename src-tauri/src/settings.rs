@@ -168,6 +168,49 @@ pub enum StreamLatencyPreset {
     Maximum,
 }
 
+/// How live text is produced while recording.
+///
+/// Only `Standard` vs. anything else matters today:
+///
+/// - [`LiveMode::Standard`] (default): unchanged behaviour. Natively streaming
+///   models stream; batch models show no live text and transcribe on stop.
+/// - [`LiveMode::Preview`]: batch (whisper-family, transcribe-cpp) models get a
+///   disposable live preview. Each VAD speech segment is transcribed through
+///   the regular batch path as soon as it ends, growing the overlay text at
+///   every pause. The pasted text still comes from a full batch transcription
+///   of the whole recording on stop, so final quality is unchanged.
+/// - [`LiveMode::ChunksPaste`]: reserved for pasting chunks as they finish.
+///   Not implemented yet; it currently behaves exactly like `Preview`.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum LiveMode {
+    #[default]
+    Standard,
+    Preview,
+    ChunksPaste,
+}
+
+impl LiveMode {
+    /// Whether batch models should run the chunked live-preview worker.
+    /// `ChunksPaste` is reserved and intentionally treated like `Preview`.
+    pub fn wants_batch_preview(self) -> bool {
+        self != LiveMode::Standard
+    }
+}
+
+/// Live preview chunking: consecutive speech segments shorter than this are
+/// merged into the next one before being transcribed (whisper does poorly on
+/// very short clips).
+pub const MIN_CHUNK_SECS: f32 = 1.0;
+/// Live preview chunking: longer speech runs are hard-split at this length.
+pub const MAX_CHUNK_SECS: f32 = 15.0;
+/// Live preview chunking: the trailing speech still buffered at stop is only
+/// previewed when it is at least this long.
+pub const MIN_FINAL_SECS: f32 = 0.35;
+/// Live preview chunking: chunks shorter than this are padded with trailing
+/// silence to this length before being transcribed.
+pub const PAD_SHORT_CHUNK_SECS: f32 = 1.25;
+
 /// Which native streaming strategy the loaded model advertises. Probed from
 /// the model's accepted stream-slot extension kinds; see the callers in
 /// `managers::transcription`.
@@ -552,6 +595,10 @@ pub struct AppSettings {
     /// `Maximum`, i.e. no family override.
     #[serde(default)]
     pub stream_latency_preset: StreamLatencyPreset,
+    /// Live text mode for batch models. Defaults to `Standard`, i.e. no live
+    /// preview worker for non-streaming models.
+    #[serde(default)]
+    pub live_mode: LiveMode,
     #[serde(default)]
     pub keyboard_implementation: KeyboardImplementation,
     #[serde(default = "default_show_tray_icon")]
@@ -1042,6 +1089,7 @@ pub fn get_default_settings() -> AppSettings {
         experimental_enabled: false,
         lazy_stream_close: false,
         stream_latency_preset: default_stream_latency_preset(),
+        live_mode: LiveMode::default(),
         keyboard_implementation: KeyboardImplementation::default(),
         show_tray_icon: default_show_tray_icon(),
         paste_delay_ms: default_paste_delay_ms(),
@@ -1443,6 +1491,7 @@ mod tests {
             "experimental_enabled": false,
             "lazy_stream_close": false,
             "stream_latency_preset": "maximum",
+            "live_mode": "standard",
             "keyboard_implementation": "handy_keys",
             "show_tray_icon": true,
             "paste_delay_ms": 60,
@@ -1905,5 +1954,43 @@ mod tests {
                 preset
             );
         }
+    }
+
+    /// A store written before `live_mode` existed must load as `Standard`
+    /// (today's behaviour), and every variant must round-trip under its
+    /// snake_case wire name.
+    #[test]
+    fn live_mode_defaults_to_standard_and_round_trips() {
+        let settings: AppSettings = serde_json::from_value(serde_json::json!({}))
+            .expect("a store missing the key must fall back to the default");
+        assert_eq!(settings.live_mode, LiveMode::Standard);
+        assert_eq!(get_default_settings().live_mode, LiveMode::Standard);
+        assert_eq!(LiveMode::default(), LiveMode::Standard);
+        assert_eq!(
+            default_settings_json()["live_mode"],
+            serde_json::json!("standard")
+        );
+
+        for (mode, wire) in [
+            (LiveMode::Standard, "standard"),
+            (LiveMode::Preview, "preview"),
+            (LiveMode::ChunksPaste, "chunks_paste"),
+        ] {
+            let json = serde_json::to_value(mode).unwrap();
+            assert_eq!(json, serde_json::json!(wire));
+            assert_eq!(serde_json::from_value::<LiveMode>(json).unwrap(), mode);
+        }
+    }
+
+    /// Only Standard vs. non-Standard matters; ChunksPaste is reserved and
+    /// must behave exactly like Preview for now.
+    #[test]
+    fn only_non_standard_live_modes_want_batch_preview() {
+        assert!(!LiveMode::Standard.wants_batch_preview());
+        assert!(LiveMode::Preview.wants_batch_preview());
+        assert_eq!(
+            LiveMode::ChunksPaste.wants_batch_preview(),
+            LiveMode::Preview.wants_batch_preview()
+        );
     }
 }

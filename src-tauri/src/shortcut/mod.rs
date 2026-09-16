@@ -22,8 +22,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::settings::APPLE_INTELLIGENCE_DEFAULT_MODEL_ID;
 use crate::settings::{
     self, get_settings, AutoSubmitKey, ClipboardHandling, KeyboardImplementation, LLMPrompt,
-    OverlayPosition, OverlayStyle, PasteMethod, ShortcutActivation, ShortcutBinding, SoundTheme,
-    StreamLatencyPreset, Theme, TypingTool, VadBackend, APPLE_INTELLIGENCE_PROVIDER_ID,
+    LiveMode, OverlayPosition, OverlayStyle, PasteMethod, ShortcutActivation, ShortcutBinding,
+    SoundTheme, StreamLatencyPreset, Theme, TypingTool, VadBackend, APPLE_INTELLIGENCE_PROVIDER_ID,
 };
 use crate::tray;
 
@@ -1284,6 +1284,15 @@ pub fn change_stream_latency_preset_setting(
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.stream_latency_preset = preset;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_live_mode_setting(app: AppHandle, mode: LiveMode) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.live_mode = mode;
     settings::write_settings(&app, settings);
     Ok(())
 }

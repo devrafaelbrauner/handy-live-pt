@@ -284,6 +284,15 @@
           "maximum": "Maximální přesnost (výchozí)"
         }
       },
+      "liveMode": {
+        "label": "Živý režim",
+        "description": "Zobrazuje text během mluvení u modelů bez nativního streamování (rodina Whisper). Náhled přepíše každou větu, když se odmlčíte; vložený text stále pochází z přepisu celé nahrávky po zastavení. Během nahrávání využívá další výpočetní výkon.",
+        "options": {
+          "standard": "Standardní (výchozí)",
+          "preview": "Náhled při pauzách",
+          "chunksPaste": "Vkládat po částech (brzy)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Akcelerace Whisper",

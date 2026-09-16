@@ -284,6 +284,15 @@
           "maximum": "Maximum accuracy (default)"
         }
       },
+      "liveMode": {
+        "label": "Live Mode",
+        "description": "Shows live text while you speak with models that don't stream natively (Whisper family). Preview transcribes each phrase when you pause; the pasted text still comes from transcribing the whole recording when you stop. Uses extra processing while recording.",
+        "options": {
+          "standard": "Standard (default)",
+          "preview": "Preview at pauses",
+          "chunksPaste": "Paste chunks (coming soon)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "transcribe.cpp Acceleration",

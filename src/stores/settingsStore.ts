@@ -6,6 +6,7 @@ import type {
   AudioDevice,
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
+  LiveMode,
   ShortcutActivation,
   StreamLatencyPreset,
   VadBackend,
@@ -172,6 +173,7 @@ const settingUpdaters: {
     commands.changeLazyStreamCloseSetting(value as boolean),
   stream_latency_preset: (value) =>
     commands.changeStreamLatencyPresetSetting(value as StreamLatencyPreset),
+  live_mode: (value) => commands.changeLiveModeSetting(value as LiveMode),
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
   vad_backend: async (value) => {

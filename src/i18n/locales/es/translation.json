@@ -284,6 +284,15 @@
           "maximum": "Precisión máxima (predeterminado)"
         }
       },
+      "liveMode": {
+        "label": "Modo en vivo",
+        "description": "Muestra texto mientras hablas con modelos sin streaming nativo (familia Whisper). La vista previa transcribe cada frase cuando haces una pausa; el texto pegado sigue saliendo de transcribir la grabación completa al detener. Usa procesamiento adicional durante la grabación.",
+        "options": {
+          "standard": "Estándar (predeterminado)",
+          "preview": "Vista previa en pausas",
+          "chunksPaste": "Pegar por fragmentos (próximamente)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Aceleración de transcribe.cpp",

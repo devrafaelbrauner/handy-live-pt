@@ -284,6 +284,15 @@
           "maximum": "Maximale nauwkeurigheid (standaard)"
         }
       },
+      "liveMode": {
+        "label": "Livemodus",
+        "description": "Toont live tekst tijdens het spreken bij modellen zonder native streaming (Whisper-familie). De voorvertoning transcribeert elke zin zodra je pauzeert; de geplakte tekst komt nog steeds uit de transcriptie van de volledige opname bij het stoppen. Gebruikt extra rekenkracht tijdens het opnemen.",
+        "options": {
+          "standard": "Standaard",
+          "preview": "Voorvertoning bij pauzes",
+          "chunksPaste": "Fragmenten plakken (binnenkort)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "transcribe.cpp-versnelling",

@@ -1,6 +1,7 @@
 use super::{
     is_microphone_access_denied, is_no_input_device_error, run_consumer, AudioRecorder,
-    CaptureProcessor, CaptureTransportState, ChunkDisposition, Cmd, VadConfig, VadPolicy,
+    CaptureProcessor, CaptureTransportState, ChunkDisposition, Cmd, SegmentSink, VadConfig,
+    VadPolicy,
 };
 use crate::audio_toolkit::vad::{VadFrame, VoiceActivityDetector};
 use rtrb::RingBuffer;
@@ -68,6 +69,171 @@ fn resampler_frame_size_follows_the_vad_backend() {
 
     assert_eq!(samples.len(), 1024);
     assert_eq!(*frame_lengths.lock().unwrap(), vec![frame_samples; 4]);
+}
+
+/// Detector replaying a scripted per-frame decision:
+/// `S` = speech, `N` = noise, `E` = segment end.
+struct ScriptedFrameVad {
+    script: std::collections::VecDeque<char>,
+    frame_samples: usize,
+}
+
+impl VoiceActivityDetector for ScriptedFrameVad {
+    fn push_frame<'a>(&'a mut self, frame: &'a [f32]) -> anyhow::Result<VadFrame<'a>> {
+        Ok(match self.script.pop_front().unwrap_or('N') {
+            'S' => VadFrame::Speech(frame),
+            'E' => VadFrame::SegmentEnd,
+            _ => VadFrame::Noise,
+        })
+    }
+
+    fn frame_samples(&self) -> usize {
+        self.frame_samples
+    }
+}
+
+const SEG_FRAME: usize = 480; // 30 ms at 16 kHz
+
+fn scripted_vad(script: &str) -> VadConfig {
+    VadConfig {
+        detector: Arc::new(Mutex::new(Box::new(ScriptedFrameVad {
+            script: script.chars().collect(),
+            frame_samples: SEG_FRAME,
+        }))),
+        frame_samples: SEG_FRAME,
+        offline_hangover_frames: 0,
+        streaming_hangover_frames: 0,
+    }
+}
+
+type Segments = Arc<Mutex<Vec<Vec<f32>>>>;
+
+fn processor_with_segments(script: &str, gate: Option<bool>) -> (CaptureProcessor, Segments) {
+    let segments: Segments = Arc::new(Mutex::new(Vec::new()));
+    let observed = Arc::clone(&segments);
+    let sink = SegmentSink {
+        callback: Arc::new(move |segment: Vec<f32>| observed.lock().unwrap().push(segment)),
+        gate: gate.map(|open| Arc::new(move || open) as super::SegmentGate),
+    };
+    let processor = CaptureProcessor::new(
+        16_000,
+        Some(scripted_vad(script)),
+        None,
+        None,
+        Instant::now(),
+    )
+    .with_segment_sink(Some(sink));
+    (processor, segments)
+}
+
+/// Feed `frames` distinct 30 ms frames (value = frame index) and stop.
+fn record_frames(processor: &mut CaptureProcessor, frames: usize) -> Vec<f32> {
+    let (ready_tx, _ready_rx) = mpsc::channel();
+    processor.begin_recording(VadPolicy::Offline, ready_tx);
+    for i in 0..frames {
+        processor.process_raw_chunk(&[i as f32; SEG_FRAME], ChunkDisposition::Capture);
+    }
+    processor.finish_recording()
+}
+
+#[test]
+fn segment_end_hands_the_accumulated_speech_to_the_segment_callback() {
+    // Two utterances separated by a boundary; the trailing 1-frame (30 ms)
+    // partial segment is below MIN_FINAL_SECS and is not flushed at stop.
+    let script = "NSSENSSSENS";
+    let (mut processor, segments) = processor_with_segments(script, None);
+    let recording = record_frames(&mut processor, script.len());
+
+    let segments = segments.lock().unwrap();
+    assert_eq!(segments.len(), 2);
+    assert_eq!(
+        segments[0],
+        [[1.0f32; SEG_FRAME], [2.0; SEG_FRAME]].concat()
+    );
+    assert_eq!(
+        segments[1],
+        [[5.0f32; SEG_FRAME], [6.0; SEG_FRAME], [7.0; SEG_FRAME]].concat()
+    );
+
+    // The recording buffer still holds every speech frame, boundaries or not.
+    let speech_frames: Vec<f32> = script
+        .chars()
+        .enumerate()
+        .filter(|(_, c)| *c == 'S')
+        .flat_map(|(i, _)| [i as f32; SEG_FRAME])
+        .collect();
+    assert_eq!(recording, speech_frames);
+}
+
+#[test]
+fn segment_accumulation_never_changes_the_recording_buffer() {
+    let script = "SSSENNSSESSSSSSSSSSSSSS";
+    let (mut with_segments, _segments) = processor_with_segments(script, None);
+    let mut without_segments = CaptureProcessor::new(
+        16_000,
+        Some(scripted_vad(script)),
+        None,
+        None,
+        Instant::now(),
+    );
+    assert_eq!(
+        record_frames(&mut with_segments, script.len()),
+        record_frames(&mut without_segments, script.len())
+    );
+}
+
+#[test]
+fn long_trailing_partial_segment_is_flushed_at_stop() {
+    // 12 speech frames = 360 ms >= MIN_FINAL_SECS (350 ms), no boundary.
+    let script = "NSSSSSSSSSSSS";
+    let (mut processor, segments) = processor_with_segments(script, None);
+    record_frames(&mut processor, script.len());
+    let segments = segments.lock().unwrap();
+    assert_eq!(segments.len(), 1);
+    assert_eq!(segments[0].len(), 12 * SEG_FRAME);
+}
+
+#[test]
+fn short_trailing_partial_segment_is_not_flushed_at_stop() {
+    // 11 speech frames = 330 ms < MIN_FINAL_SECS.
+    let script = "NSSSSSSSSSSS";
+    let (mut processor, segments) = processor_with_segments(script, None);
+    record_frames(&mut processor, script.len());
+    assert!(segments.lock().unwrap().is_empty());
+}
+
+#[test]
+fn closed_segment_gate_disables_segments_for_the_recording() {
+    let script = "SSSESSSSSSSSSSSSS";
+    let (mut processor, segments) = processor_with_segments(script, Some(false));
+    let recording = record_frames(&mut processor, script.len());
+    assert!(segments.lock().unwrap().is_empty());
+    assert_eq!(
+        recording.len(),
+        script.chars().filter(|c| *c == 'S').count() * SEG_FRAME
+    );
+}
+
+#[test]
+fn segments_do_not_leak_across_recordings() {
+    // First recording ends mid-segment with a short (un-flushed) tail; the
+    // next recording's first segment must not include it.
+    let (mut processor, segments) = processor_with_segments("SSSSSE", None);
+    let (ready_tx, _ready_rx) = mpsc::channel();
+    processor.begin_recording(VadPolicy::Offline, ready_tx);
+    processor.process_raw_chunk(&[9.0; SEG_FRAME], ChunkDisposition::Capture);
+    processor.finish_recording();
+
+    let (ready_tx, _ready_rx) = mpsc::channel();
+    processor.begin_recording(VadPolicy::Offline, ready_tx);
+    for _ in 0..5 {
+        processor.process_raw_chunk(&[1.0; SEG_FRAME], ChunkDisposition::Capture);
+    }
+    processor.finish_recording();
+
+    let segments = segments.lock().unwrap();
+    assert_eq!(segments.len(), 1);
+    assert_eq!(segments[0], vec![1.0; 4 * SEG_FRAME]);
 }
 
 #[test]

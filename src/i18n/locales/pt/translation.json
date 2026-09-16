@@ -284,6 +284,15 @@
           "maximum": "Precisão máxima (padrão)"
         }
       },
+      "liveMode": {
+        "label": "Modo ao vivo",
+        "description": "Mostra o texto enquanto você fala, em modelos sem transcrição em tempo real nativa (família Whisper). A pré-visualização transcreve cada frase quando você faz uma pausa; o texto colado continua vindo da transcrição da gravação completa ao parar. Usa processamento extra durante a gravação.",
+        "options": {
+          "standard": "Padrão",
+          "preview": "Pré-visualização por pausas",
+          "chunksPaste": "Colar por trechos (em breve)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Aceleração Whisper",

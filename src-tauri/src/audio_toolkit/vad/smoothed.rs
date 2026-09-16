@@ -106,8 +106,10 @@ impl VoiceActivityDetector for SmoothedVad {
                     self.mark_last_emitted();
                     Ok(VadFrame::Speech(frame))
                 } else {
+                    // Hangover exhausted: this frame is the speech -> silence
+                    // transition, so it marks the end of a speech segment.
                     self.in_speech = false;
-                    Ok(VadFrame::Noise)
+                    Ok(VadFrame::SegmentEnd)
                 }
             }
 
@@ -200,6 +202,68 @@ mod tests {
 
     fn smoothed(script: &[bool], onset_frames: usize) -> SmoothedVad {
         SmoothedVad::new(Box::new(ScriptedVad::new(script)), 3, 2, onset_frames)
+    }
+
+    fn is_segment_end(frame: &VadFrame<'_>) -> bool {
+        matches!(frame, VadFrame::SegmentEnd)
+    }
+
+    #[test]
+    fn speech_to_silence_emits_exactly_one_segment_end_after_hangover() {
+        // onset 2, hangover 2: two voiced frames confirm speech, then two
+        // silent frames are still emitted as speech (hangover tail), the
+        // third silent frame closes the segment, and further silence is Noise.
+        let script = [true, true, false, false, false, false, false];
+        let mut vad = smoothed(&script, 2);
+        let mut kinds = Vec::new();
+        for (i, _) in script.iter().enumerate() {
+            let input = frame(i as f32);
+            let out = vad.push_frame(&input).unwrap();
+            kinds.push(match out {
+                VadFrame::Speech(_) => "speech",
+                VadFrame::Noise => "noise",
+                VadFrame::SegmentEnd => "end",
+            });
+        }
+        assert_eq!(
+            kinds,
+            ["noise", "speech", "speech", "speech", "end", "noise", "noise"]
+        );
+    }
+
+    #[test]
+    fn segment_end_is_not_speech_and_is_emitted_once_per_segment() {
+        assert!(!VadFrame::SegmentEnd.is_speech());
+
+        // Two separate utterances -> two boundaries.
+        let script = [
+            true, true, false, false, false, false, true, true, false, false, false,
+        ];
+        let mut vad = smoothed(&script, 2);
+        let ends = script
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| is_segment_end(&vad.push_frame(&frame(*i as f32)).unwrap()))
+            .count();
+        assert_eq!(ends, 2);
+    }
+
+    #[test]
+    fn pure_silence_never_emits_segment_end() {
+        let script = [false; 20];
+        let mut vad = smoothed(&script, 2);
+        for i in 0..script.len() {
+            let input = frame(i as f32);
+            let out = vad.push_frame(&input).unwrap();
+            assert!(!is_segment_end(&out));
+            assert!(!out.is_speech());
+        }
+        // A broken onset (single voiced frame) is not a segment either.
+        let script = [false, true, false, false, false, false];
+        let mut vad = smoothed(&script, 2);
+        for i in 0..script.len() {
+            assert!(!is_segment_end(&vad.push_frame(&frame(i as f32)).unwrap()));
+        }
     }
 
     #[test]

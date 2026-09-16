@@ -367,6 +367,14 @@ async changeStreamLatencyPresetSetting(preset: StreamLatencyPreset) : Promise<Re
     else return { status: "error", error: e  as any };
 }
 },
+async changeLiveModeSetting(mode: LiveMode) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_live_mode_setting", { mode }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeVadEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_vad_enabled_setting", { enabled }) };
@@ -995,7 +1003,12 @@ selected_channel?: number | null; clamshell_microphone?: string | null; selected
  * Latency/accuracy trade-off for natively streaming models. Defaults to
  * `Maximum`, i.e. no family override.
  */
-stream_latency_preset?: StreamLatencyPreset; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number;
+stream_latency_preset?: StreamLatencyPreset;
+/**
+ * Live text mode for batch models. Defaults to `Standard`, i.e. no live
+ * preview worker for non-streaming models.
+ */
+live_mode?: LiveMode; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number;
 /**
  * Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
  * after the target app actually reads the transcript, instead of after a
@@ -1049,6 +1062,22 @@ export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_
 key_down: number; key_up: number; flags_changed: number; mouse: number; duration_ms: number }
 export type KeyboardImplementation = "tauri" | "handy_keys"
 export type LLMPrompt = { id: string; name: string; prompt: string }
+/**
+ * How live text is produced while recording.
+ *
+ * Only `Standard` vs. anything else matters today:
+ *
+ * - [`LiveMode::Standard`] (default): unchanged behaviour. Natively streaming
+ * models stream; batch models show no live text and transcribe on stop.
+ * - [`LiveMode::Preview`]: batch (whisper-family, transcribe-cpp) models get a
+ * disposable live preview. Each VAD speech segment is transcribed through
+ * the regular batch path as soon as it ends, growing the overlay text at
+ * every pause. The pasted text still comes from a full batch transcription
+ * of the whole recording on stop, so final quality is unchanged.
+ * - [`LiveMode::ChunksPaste`]: reserved for pasting chunks as they finish.
+ * Not implemented yet; it currently behaves exactly like `Preview`.
+ */
+export type LiveMode = "standard" | "preview" | "chunks_paste"
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }

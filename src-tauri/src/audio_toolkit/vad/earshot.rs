@@ -102,7 +102,9 @@ mod tests {
         let frame = [1.01; EARSHOT_FRAME_SAMPLES];
         match vad.push_frame(&frame).unwrap() {
             VadFrame::Speech(output) => assert_eq!(output, frame),
-            VadFrame::Noise => panic!("zero threshold should retain the frame"),
+            VadFrame::Noise | VadFrame::SegmentEnd => {
+                panic!("zero threshold should retain the frame")
+            }
         }
     }
 

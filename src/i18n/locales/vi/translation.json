@@ -284,6 +284,15 @@
           "maximum": "Độ chính xác tối đa (mặc định)"
         }
       },
+      "liveMode": {
+        "label": "Chế độ trực tiếp",
+        "description": "Hiển thị văn bản khi bạn nói với các mô hình không hỗ trợ phát trực tuyến gốc (họ Whisper). Bản xem trước sẽ chép lời từng câu mỗi khi bạn ngừng; văn bản được dán vẫn đến từ việc chép lời toàn bộ bản ghi khi dừng. Sử dụng thêm tài nguyên xử lý trong khi ghi âm.",
+        "options": {
+          "standard": "Tiêu chuẩn (mặc định)",
+          "preview": "Xem trước theo khoảng dừng",
+          "chunksPaste": "Dán theo từng đoạn (sắp ra mắt)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Tăng tốc Whisper",

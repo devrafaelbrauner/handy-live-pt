@@ -284,6 +284,15 @@
           "maximum": "最高準確度（預設）"
         }
       },
+      "liveMode": {
+        "label": "即時模式",
+        "description": "對不支援原生串流辨識的模型（Whisper 系列），在你說話時顯示文字。預覽會在每次停頓時轉寫該句；貼上的文字仍來自停止後對整段錄音的轉寫。錄音時會佔用額外運算資源。",
+        "options": {
+          "standard": "標準（預設）",
+          "preview": "停頓時預覽",
+          "chunksPaste": "分段貼上（即將推出）"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Whisper 加速",
