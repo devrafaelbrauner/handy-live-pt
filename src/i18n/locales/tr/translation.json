@@ -274,6 +274,16 @@
         "label": "Transkripsiyonlar Arasında Mikrofonu Açık Tut",
         "description": "Kayıt durdurulduktan sonra mikrofon akışını 30 saniye açık tutar, ardışık transkripsiyonlarda gecikmeyi azaltır. Etkinken Bluetooth ses kalitesini düşürebilir."
       },
+      "streamLatencyPreset": {
+        "label": "Akış gecikmesi",
+        "description": "Yerel akış desteği olan modellerde gecikme ile doğruluk arasında denge kurar. Daha düşük gecikme metni daha erken gösterir, en yüksek seçeneği ise modelin kendi varsayılanlarını korur. Akış desteklemeyen modeller ve normal yazıya dökme bunu yok sayar.",
+        "options": {
+          "lowLatency": "Düşük gecikme",
+          "balanced": "Dengeli",
+          "highLatency": "Yüksek gecikme",
+          "maximum": "En yüksek doğruluk (varsayılan)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "transcribe.cpp Hızlandırması",

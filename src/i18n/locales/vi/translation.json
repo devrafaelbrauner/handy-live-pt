@@ -274,6 +274,16 @@
         "label": "Giữ micro mở giữa các lần phiên âm",
         "description": "Giữ luồng micro mở trong 30 giây sau khi dừng ghi âm, giảm độ trễ khi phiên âm liên tiếp. Có thể làm giảm chất lượng âm thanh Bluetooth khi đang hoạt động."
       },
+      "streamLatencyPreset": {
+        "label": "Độ trễ phát trực tiếp",
+        "description": "Cân bằng giữa độ trễ và độ chính xác trên các mô hình hỗ trợ phát trực tiếp gốc. Độ trễ thấp hiển thị văn bản sớm hơn, còn mức tối đa giữ nguyên giá trị mặc định của mô hình. Các mô hình không hỗ trợ và bản chép lời thông thường sẽ bỏ qua thiết lập này.",
+        "options": {
+          "lowLatency": "Độ trễ thấp",
+          "balanced": "Cân bằng",
+          "highLatency": "Độ trễ cao",
+          "maximum": "Độ chính xác tối đa (mặc định)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Tăng tốc Whisper",

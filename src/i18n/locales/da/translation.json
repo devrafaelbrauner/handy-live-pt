@@ -274,6 +274,16 @@
         "label": "Hold mikrofon åben mellem transskriptioner",
         "description": "Holder mikrofonstrømmen åben i 30 sekunder, efter at optagelsen stopper, hvilket reducerer ventetid ved transskriptioner lige efter hinanden. Kan forringe Bluetooth-lydkvaliteten, mens den er aktiv."
       },
+      "streamLatencyPreset": {
+        "label": "Streaming-latens",
+        "description": "Afvejer streaming-latens mod nøjagtighed for modeller med indbygget streaming. Lavere latens viser teksten hurtigere, mens maksimum bevarer modellens egne standardindstillinger. Modeller uden streaming og almindelig transskription ignorerer dette.",
+        "options": {
+          "lowLatency": "Lav latens",
+          "balanced": "Balanceret",
+          "highLatency": "Høj latens",
+          "maximum": "Maksimal nøjagtighed (standard)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "transcribe.cpp-acceleration",

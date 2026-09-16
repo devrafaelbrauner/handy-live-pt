@@ -7,6 +7,7 @@ import type {
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
   ShortcutActivation,
+  StreamLatencyPreset,
   VadBackend,
 } from "@/bindings";
 import { commands } from "@/bindings";
@@ -169,6 +170,8 @@ const settingUpdaters: {
     commands.changeExperimentalEnabledSetting(value as boolean),
   lazy_stream_close: (value) =>
     commands.changeLazyStreamCloseSetting(value as boolean),
+  stream_latency_preset: (value) =>
+    commands.changeStreamLatencyPresetSetting(value as StreamLatencyPreset),
   overlay_style: (value) => commands.changeOverlayStyleSetting(value as string),
   vad_enabled: (value) => commands.changeVadEnabledSetting(value as boolean),
   vad_backend: async (value) => {

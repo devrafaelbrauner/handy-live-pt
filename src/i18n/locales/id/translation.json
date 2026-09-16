@@ -274,6 +274,16 @@
         "label": "Biarkan Mikrofon Tetap Aktif di Antara Transkripsi",
         "description": "Membiarkan aliran mikrofon tetap terbuka selama 30 detik setelah perekaman berhenti untuk mengurangi latensi pada transkripsi beruntun. Dapat menurunkan kualitas audio Bluetooth saat aktif."
       },
+      "streamLatencyPreset": {
+        "label": "Latensi streaming",
+        "description": "Menyeimbangkan latensi streaming dengan akurasi pada model yang mendukung streaming secara native. Latensi lebih rendah menampilkan teks lebih cepat, sedangkan maksimum mempertahankan pengaturan bawaan model. Model tanpa streaming native dan transkripsi biasa mengabaikannya.",
+        "options": {
+          "lowLatency": "Latensi rendah",
+          "balanced": "Seimbang",
+          "highLatency": "Latensi tinggi",
+          "maximum": "Akurasi maksimum (bawaan)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Akselerasi transcribe.cpp",
