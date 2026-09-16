@@ -1,5 +1,7 @@
 # Handy
 
+> **Handy Live PT** — fork pessoal (não-oficial, sem afiliação) do [cjpais/handy](https://github.com/cjpais/handy) para pesquisa e desenvolvimento de transcrição ao vivo em português (pt-BR) no macOS. Este fork é renomeado ("Handy Live PT", `com.rafael.handylive`) e usa ícones próprios; "Handy" é marca do projeto upstream. Objetivo do fork: expor presets de latência de streaming e pseudo-streaming por segmentos VAD para modelos batch (ver `PLANO.md` na raiz do workspace).
+
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/WVBeWsNXK4)
 
 **A free, open source, and extensible speech-to-text application that works completely offline.**

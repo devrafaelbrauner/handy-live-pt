@@ -1,0 +1,90 @@
+name: AI delivery pipeline
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ai-pipeline-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same apt set proven by upstream .github/workflows/test.yml (cargo test on ubuntu-24.04)
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev libasound2-dev libssl-dev libgtk-layer-shell-dev \
+            libvulkan-dev glslc spirv-headers libx11-dev libxtst-dev libxrandr-dev patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Run project checks
+        shell: bash
+        run: ./.ai-pipeline/ci.sh
+
+  kilo-review:
+    name: Kilo review
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Require Kilo credential
+        shell: bash
+        run: test -n "$KILO_API_KEY" || { echo 'KILO_API_KEY is not configured'; exit 1; }
+      - name: Install Kilo Code CLI
+        run: npm install --global @kilocode/cli
+      - name: Review pull request
+        shell: bash
+        run: ./.ai-pipeline/kilo-review.sh
+      - name: Upload review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kilo-review
+          path: .ai-pipeline/kilo-review.txt
+          if-no-files-found: error
+
+  human-approval:
+    name: Human approval
+    needs: kilo-review
+    runs-on: ubuntu-latest
+    environment: human-approval
+    steps:
+      - run: echo 'Human approval granted after CI and Kilo review.'
+
+  pipeline-complete:
+    name: Pipeline complete
+    needs: human-approval
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'PIPELINE_GATE=PASS' >> "$GITHUB_ENV"
