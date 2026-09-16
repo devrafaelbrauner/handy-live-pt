@@ -171,16 +171,14 @@ jobs:
             fi
           fi
 
-          if [[ "$platform_signing" != "true" || "$updater_signing" != "true" ]]; then
-            jq \
-              --argjson keep_windows_signing $([[ "$platform_signing" == "true" ]] && echo true || echo false) \
-              --argjson keep_macos_signing $([[ "$RUNNER_OS" == "macOS" && "$platform_signing" == "true" ]] && echo true || echo false) \
-              --argjson keep_updater_signing $([[ "$updater_signing" == "true" ]] && echo true || echo false) \
-              'if $keep_windows_signing then . else del(.bundle.windows.signCommand) end
-               | if $keep_macos_signing then . else del(.bundle.macOS.signingIdentity) end
-               | if $keep_updater_signing then . else .bundle.createUpdaterArtifacts = false end' \
-              "$TAURI_CONFIG_PATH" > tauri.conf.json.tmp && mv tauri.conf.json.tmp "$TAURI_CONFIG_PATH"
-          fi
+          jq \
+            --argjson keep_windows_signing $([[ "$platform_signing" == "true" ]] && echo true || echo false) \
+            --argjson keep_macos_signing $([[ "$RUNNER_OS" == "macOS" && "$platform_signing" == "true" ]] && echo true || echo false) \
+            --argjson keep_updater_signing $([[ "$updater_signing" == "true" ]] && echo true || echo false) \
+            'if $keep_windows_signing then . else del(.bundle.windows.signCommand) end
+             | if $keep_macos_signing then . else del(.bundle.macOS.signingIdentity) end
+             | if $keep_updater_signing then . else .bundle.createUpdaterArtifacts = false end' \
+            "$TAURI_CONFIG_PATH" > tauri.conf.json.tmp && mv tauri.conf.json.tmp "$TAURI_CONFIG_PATH"
 
           echo "platform=$platform_signing" >> "$GITHUB_OUTPUT"
           echo "updater=$updater_signing" >> "$GITHUB_OUTPUT"
