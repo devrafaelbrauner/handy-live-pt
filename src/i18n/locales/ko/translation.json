@@ -284,6 +284,15 @@
           "maximum": "최대 정확도(기본값)"
         }
       },
+      "liveMode": {
+        "label": "라이브 모드",
+        "description": "기본 스트리밍을 지원하지 않는 모델(Whisper 계열)에서 말하는 동안 텍스트를 표시합니다. 미리보기는 말을 멈출 때마다 문장을 받아씁니다. 붙여넣는 텍스트는 여전히 중지 시 전체 녹음을 받아쓴 결과입니다. 녹음 중 추가 처리가 필요합니다.",
+        "options": {
+          "standard": "표준(기본값)",
+          "preview": "멈춤마다 미리보기",
+          "chunksPaste": "구간별 붙여넣기(곧 제공)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Whisper 가속",

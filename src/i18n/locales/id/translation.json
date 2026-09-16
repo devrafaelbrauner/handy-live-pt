@@ -284,6 +284,15 @@
           "maximum": "Akurasi maksimum (bawaan)"
         }
       },
+      "liveMode": {
+        "label": "Mode langsung",
+        "description": "Menampilkan teks saat Anda berbicara pada model tanpa streaming bawaan (keluarga Whisper). Pratinjau mentranskripsi setiap kalimat saat Anda berhenti sejenak; teks yang ditempel tetap berasal dari transkripsi seluruh rekaman saat berhenti. Menggunakan pemrosesan tambahan selama merekam.",
+        "options": {
+          "standard": "Standar (bawaan)",
+          "preview": "Pratinjau saat jeda",
+          "chunksPaste": "Tempel per bagian (segera hadir)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Akselerasi transcribe.cpp",

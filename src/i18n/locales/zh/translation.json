@@ -284,6 +284,15 @@
           "maximum": "最高准确度（默认）"
         }
       },
+      "liveMode": {
+        "label": "实时模式",
+        "description": "对不支持原生流式识别的模型（Whisper 系列），在你说话时显示文字。预览会在每次停顿时转写该句；粘贴的文本仍来自停止后对整段录音的转写。录音时会占用额外算力。",
+        "options": {
+          "standard": "标准（默认）",
+          "preview": "停顿时预览",
+          "chunksPaste": "分段粘贴（即将推出）"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Whisper 加速",

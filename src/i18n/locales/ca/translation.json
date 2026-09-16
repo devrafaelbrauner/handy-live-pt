@@ -284,6 +284,15 @@
           "maximum": "Precisió màxima (per defecte)"
         }
       },
+      "liveMode": {
+        "label": "Mode en directe",
+        "description": "Mostra text mentre parles amb models sense streaming natiu (família Whisper). La previsualització transcriu cada frase quan fas una pausa; el text enganxat continua sortint de la transcripció de l'enregistrament complet en aturar. Fa servir processament addicional durant l'enregistrament.",
+        "options": {
+          "standard": "Estàndard (per defecte)",
+          "preview": "Previsualització a les pauses",
+          "chunksPaste": "Enganxar per fragments (aviat)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Acceleració del transcribe.cpp",

@@ -284,6 +284,15 @@
           "maximum": "Maximale Genauigkeit (Standard)"
         }
       },
+      "liveMode": {
+        "label": "Live-Modus",
+        "description": "Zeigt beim Sprechen Live-Text für Modelle ohne natives Streaming (Whisper-Familie). Die Vorschau transkribiert jeden Satz, sobald Sie eine Pause machen; der eingefügte Text stammt weiterhin aus der Transkription der gesamten Aufnahme beim Stoppen. Benötigt während der Aufnahme zusätzliche Rechenleistung.",
+        "options": {
+          "standard": "Standard",
+          "preview": "Vorschau bei Pausen",
+          "chunksPaste": "Abschnitte einfügen (demnächst)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Whisper-Beschleunigung",

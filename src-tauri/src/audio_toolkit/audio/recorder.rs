@@ -19,6 +19,7 @@ use crate::audio_toolkit::{
     vad::{self, VadFrame},
     VoiceActivityDetector,
 };
+use crate::settings::MIN_FINAL_SECS;
 
 enum Cmd {
     /// Begin capturing. Carries the send timestamp so the consumer can log how
@@ -84,6 +85,15 @@ impl VadConfig {
 /// policy while recording. Used to feed a live streaming transcription as audio arrives.
 pub type AudioFrameCallback = Arc<dyn Fn(&[f32]) + Send + Sync + 'static>;
 pub type LevelCallback = Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>;
+/// Callback invoked with one completed VAD speech segment (16 kHz mono) each
+/// time the detector closes a segment, plus once at stop for a long-enough
+/// trailing partial segment. Runs on the recorder's consumer thread; it must
+/// be cheap and non-blocking (e.g. a `try_send`).
+pub type SegmentCallback = Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>;
+/// Queried once per recording (at `Cmd::Start`) to decide whether speech
+/// segments should be accumulated for the [`SegmentCallback`] at all. Keeps the
+/// default path from building a second copy of the speech audio nobody reads.
+pub type SegmentGate = Arc<dyn Fn() -> bool + Send + Sync + 'static>;
 
 pub struct AudioRecorder {
     device: Option<Device>,
@@ -92,6 +102,8 @@ pub struct AudioRecorder {
     vad: Option<VadConfig>,
     level_cb: Option<LevelCallback>,
     audio_cb: Option<AudioFrameCallback>,
+    segment_cb: Option<SegmentCallback>,
+    segment_gate: Option<SegmentGate>,
     /// Which input channel to use. None = average all (original behavior).
     selected_channel: Option<usize>,
     /// Preferred stream config cached per device name. The two HAL property
@@ -114,6 +126,8 @@ impl AudioRecorder {
             vad: None,
             level_cb: None,
             audio_cb: None,
+            segment_cb: None,
+            segment_gate: None,
             selected_channel: None,
             config_cache: Arc::new(Mutex::new(None)),
             stream_error: Arc::new(AtomicBool::new(false)),
@@ -160,6 +174,29 @@ impl AudioRecorder {
         self
     }
 
+    /// Register a callback that receives each completed VAD speech segment.
+    /// Segments are accumulated separately from the recording buffer, which is
+    /// never altered. Invoked on the recorder's consumer thread — keep the
+    /// callback cheap and non-blocking so it never stalls capture.
+    pub fn with_segment_callback<F>(mut self, cb: F) -> Self
+    where
+        F: Fn(Vec<f32>) + Send + Sync + 'static,
+    {
+        self.segment_cb = Some(Arc::new(cb));
+        self
+    }
+
+    /// Optional per-recording gate for the segment callback, evaluated once at
+    /// recording start. Without a gate, segments are always accumulated when a
+    /// segment callback is registered.
+    pub fn with_segment_gate<F>(mut self, gate: F) -> Self
+    where
+        F: Fn() -> bool + Send + Sync + 'static,
+    {
+        self.segment_gate = Some(Arc::new(gate));
+        self
+    }
+
     pub fn with_selected_channel(mut self, channel: Option<u16>) -> Self {
         self.set_selected_channel(channel);
         self
@@ -197,6 +234,10 @@ impl AudioRecorder {
         let level_cb = self.level_cb.clone();
         // Move the optional real-time audio frame callback into the worker thread
         let audio_cb = self.audio_cb.clone();
+        let segment_sink = self.segment_cb.clone().map(|callback| SegmentSink {
+            callback,
+            gate: self.segment_gate.clone(),
+        });
         let selected_channel = self.selected_channel;
         let config_cache = Arc::clone(&self.config_cache);
         let stream_error = Arc::clone(&self.stream_error);
@@ -327,7 +368,8 @@ impl AudioRecorder {
                         level_cb,
                         audio_cb,
                         stream_running_at,
-                    );
+                    )
+                    .with_segment_sink(segment_sink);
                     run_consumer(
                         processor,
                         sample_consumer,
@@ -628,6 +670,52 @@ pub fn is_no_input_device_error(error_message: &str) -> bool {
             && normalized.contains("coreaudio"))
 }
 
+/// Segment callback plus its optional per-recording gate.
+#[derive(Clone)]
+struct SegmentSink {
+    callback: SegmentCallback,
+    gate: Option<SegmentGate>,
+}
+
+/// Recording-scoped accumulation of the current VAD speech segment. Entirely
+/// separate from the recording buffer (`out_buf`): segments are a disposable
+/// side channel and never alter what is saved, transcribed, or stored.
+#[derive(Default)]
+struct SegmentState {
+    /// Callback for completed segments; `None` disables accumulation.
+    sink: Option<SegmentCallback>,
+    /// Speech samples since the last segment boundary.
+    buf: Vec<f32>,
+}
+
+impl SegmentState {
+    fn is_active(&self) -> bool {
+        self.sink.is_some()
+    }
+
+    fn accumulate(&mut self, speech: &[f32]) {
+        if self.is_active() {
+            self.buf.extend_from_slice(speech);
+        }
+    }
+
+    /// Hand the accumulated segment to the callback, if there is one.
+    fn emit(&mut self) {
+        if self.buf.is_empty() {
+            return;
+        }
+        if let Some(cb) = &self.sink {
+            cb(std::mem::take(&mut self.buf));
+        }
+    }
+}
+
+/// Minimum trailing segment (in 16 kHz samples) flushed to the segment
+/// callback when a recording stops.
+fn min_final_segment_samples() -> usize {
+    (MIN_FINAL_SECS * constants::WHISPER_SAMPLE_RATE as f32).round() as usize
+}
+
 /// Route one 16 kHz frame through VAD to recording and live outputs.
 /// Kept free-standing to permit disjoint borrows around resampler callbacks.
 fn handle_frame(
@@ -636,6 +724,7 @@ fn handle_frame(
     vad: &Option<VadConfig>,
     audio_cb: &Option<AudioFrameCallback>,
     out_buf: &mut Vec<f32>,
+    segment: &mut SegmentState,
 ) {
     let mut emit = |buf: &[f32]| {
         out_buf.extend_from_slice(buf);
@@ -655,8 +744,12 @@ fn handle_frame(
             .push_frame(samples)
             .unwrap_or(VadFrame::Speech(samples))
         {
-            VadFrame::Speech(buf) => emit(buf),
+            VadFrame::Speech(buf) => {
+                emit(buf);
+                segment.accumulate(buf);
+            }
             VadFrame::Noise => {}
+            VadFrame::SegmentEnd => segment.emit(),
         }
     } else {
         emit(samples);
@@ -704,6 +797,7 @@ struct CaptureProcessor {
     vad: Option<VadConfig>,
     level_cb: Option<LevelCallback>,
     audio_cb: Option<AudioFrameCallback>,
+    segment_sink: Option<SegmentSink>,
     stream_running_at: Instant,
     visualizer: AudioVisualiser,
     frame_resampler: FrameResampler,
@@ -713,6 +807,9 @@ struct CaptureProcessor {
     // ---- recording-scoped: reset by `begin_recording` ------------------- //
     vad_policy: VadPolicy,
     processed_samples: Vec<f32>,
+    /// Current VAD speech segment for the segment callback. Independent of
+    /// `processed_samples`.
+    segment: SegmentState,
     awaiting_first_captured_chunk: Option<Instant>,
     capture_ready_tx: Option<mpsc::Sender<()>>,
     total_dropped_samples: u64,
@@ -757,6 +854,7 @@ impl CaptureProcessor {
             vad,
             level_cb,
             audio_cb,
+            segment_sink: None,
             stream_running_at,
             visualizer,
             frame_resampler,
@@ -764,11 +862,17 @@ impl CaptureProcessor {
             first_chunk_logged: false,
             vad_policy: VadPolicy::Offline,
             processed_samples: Vec::new(),
+            segment: SegmentState::default(),
             awaiting_first_captured_chunk: None,
             capture_ready_tx: None,
             total_dropped_samples: 0,
             overrun_warning_logged: false,
         }
+    }
+
+    fn with_segment_sink(mut self, sink: Option<SegmentSink>) -> Self {
+        self.segment_sink = sink;
+        self
     }
 
     /// Reset per-recording state and arm the first-sample acknowledgement.
@@ -779,6 +883,16 @@ impl CaptureProcessor {
         self.overrun_warning_logged = false;
         self.vad_policy = policy;
         self.processed_samples.clear();
+        // Segments are only accumulated when a consumer is registered and
+        // wants them for this recording (checked once, not per frame).
+        self.segment = SegmentState {
+            sink: self
+                .segment_sink
+                .as_ref()
+                .filter(|sink| sink.gate.as_ref().is_none_or(|gate| gate()))
+                .map(|sink| Arc::clone(&sink.callback)),
+            buf: Vec::new(),
+        };
         self.visualizer.reset();
         self.frame_resampler.reset();
         if policy != VadPolicy::Disabled {
@@ -835,6 +949,7 @@ impl CaptureProcessor {
                 &self.vad,
                 &self.audio_cb,
                 &mut self.processed_samples,
+                &mut self.segment,
             )
         });
 
@@ -878,8 +993,17 @@ impl CaptureProcessor {
                 &self.vad,
                 &self.audio_cb,
                 &mut self.processed_samples,
+                &mut self.segment,
             )
         });
+
+        // Preview the trailing partial segment still open at stop, if it is
+        // long enough to be worth transcribing. Cosmetic: the recording buffer
+        // (and therefore the final transcription) is unaffected.
+        if self.segment.buf.len() >= min_final_segment_samples() {
+            self.segment.emit();
+        }
+        self.segment = SegmentState::default();
 
         // Diagnostic for VAD audio still withheld when capture stopped; it is
         // not conclusive in either direction.

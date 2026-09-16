@@ -693,6 +693,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_append_trailing_space_setting,
             shortcut::change_lazy_stream_close_setting,
             shortcut::change_stream_latency_preset_setting,
+            shortcut::change_live_mode_setting,
             shortcut::change_vad_enabled_setting,
             shortcut::change_vad_backend_setting,
             shortcut::change_filler_word_removal_enabled_setting,

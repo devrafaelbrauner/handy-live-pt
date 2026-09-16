@@ -21,6 +21,11 @@ pub enum VadFrame<'a> {
     Speech(&'a [f32]),
     /// Non-speech (silence, noise). Down-stream code can ignore it.
     Noise,
+    /// Non-speech frame that closes a speech segment: the first frame after
+    /// the post-speech hangover tail has run out. Carries no audio. Consumers
+    /// that don't care about segment boundaries can treat it exactly like
+    /// [`VadFrame::Noise`].
+    SegmentEnd,
 }
 
 impl<'a> VadFrame<'a> {

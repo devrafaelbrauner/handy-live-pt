@@ -1,3 +1,4 @@
+use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
 use crate::audio_toolkit::{
     apply_custom_words, detect_output_language, normalize_transcription_output,
     remove_filler_words, OutputLanguageEvidence,
@@ -6,7 +7,8 @@ use crate::managers::audio::AudioRecordingManager;
 use crate::managers::model::{EngineType, ModelManager};
 use crate::settings::{
     get_settings, stream_extension_for_preset, AppSettings, ModelUnloadTimeout,
-    OrtAcceleratorSetting, StreamFamilyKind, TranscribeAcceleratorSetting,
+    OrtAcceleratorSetting, StreamFamilyKind, TranscribeAcceleratorSetting, MAX_CHUNK_SECS,
+    MIN_CHUNK_SECS, MIN_FINAL_SECS, PAD_SHORT_CHUNK_SECS,
 };
 use anyhow::Result;
 use log::{debug, error, info, warn};
@@ -45,6 +47,7 @@ const PARAKEET_STREAM: u32 = 0x54534B50;
 
 const STREAM_PERF_LOG_INTERVAL: Duration = Duration::from_secs(5);
 const STREAM_FINALIZE_REPLY_TIMEOUT: Duration = Duration::from_secs(30);
+const ENGINE_LEASE_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
@@ -107,6 +110,10 @@ pub struct StreamPhaseEvent {
 /// is processed before finalize runs.
 enum StreamCmd {
     Feed(Vec<f32>),
+    /// A completed VAD speech segment (16 kHz mono) for the batch live preview.
+    /// Admission is bounded by [`StreamRouter::feed_segment`]; the worker must
+    /// call [`StreamRouter::release_segment_slot`] once it has handled it.
+    Segment(Vec<f32>),
     /// Flush the stream and reply with the final text, or `None` if no stream
     /// was ever active (caller should fall back to batch transcription).
     Finalize(mpsc::Sender<Option<FinalizedStreamText>>),
@@ -132,6 +139,14 @@ pub struct StreamRouter {
     /// True while a stream is pending or active (channel is open). The audio
     /// callback checks this first to avoid the mutex lock when no stream runs.
     open: Arc<AtomicBool>,
+    /// True while the open session wants completed VAD speech segments (batch
+    /// live preview). False for the default `LiveMode::Standard`.
+    segments: AtomicBool,
+    /// Capacity-1 bounded admission for segments: set when a segment is queued
+    /// for (or being run by) the worker, cleared by the worker when done. A
+    /// segment offered while the slot is taken is dropped — the preview is
+    /// disposable and must never make the recorder wait.
+    segment_slot: AtomicBool,
 }
 
 impl StreamRouter {
@@ -139,15 +154,22 @@ impl StreamRouter {
         Self {
             tx: Mutex::new(None),
             open: Arc::new(AtomicBool::new(false)),
+            segments: AtomicBool::new(false),
+            segment_slot: AtomicBool::new(false),
         }
     }
 
     /// Open a fresh command channel for a new streaming session, returning the
     /// receiver the worker should drain. Caller must ensure no prior channel is
     /// still open.
-    fn open(&self) -> mpsc::Receiver<StreamCmd> {
+    ///
+    /// `accept_segments` routes completed VAD segments to the worker (batch
+    /// live preview); without it [`Self::feed_segment`] is a no-op.
+    fn open(&self, accept_segments: bool) -> mpsc::Receiver<StreamCmd> {
         let (tx, rx) = mpsc::channel::<StreamCmd>();
         *self.tx.lock().unwrap() = Some(tx);
+        self.segment_slot.store(false, Ordering::Release);
+        self.segments.store(accept_segments, Ordering::Release);
         self.open.store(true, Ordering::Relaxed);
         rx
     }
@@ -156,6 +178,7 @@ impl StreamRouter {
     /// sender so the caller can send the final `Finalize`/`Cancel` command.
     fn take(&self) -> Option<mpsc::Sender<StreamCmd>> {
         self.open.store(false, Ordering::Relaxed);
+        self.segments.store(false, Ordering::Release);
         self.tx.lock().unwrap().take()
     }
 
@@ -163,6 +186,7 @@ impl StreamRouter {
     /// when the worker exits without a finalize/cancel handshake).
     fn clear(&self) {
         self.open.store(false, Ordering::Relaxed);
+        self.segments.store(false, Ordering::Release);
         *self.tx.lock().unwrap() = None;
     }
 
@@ -177,9 +201,149 @@ impl StreamRouter {
         }
     }
 
+    /// Forward a completed VAD speech segment to the active worker without ever
+    /// blocking: if the worker has not finished the previous segment yet (or no
+    /// preview session is open), the segment is silently dropped. Called on the
+    /// recorder's consumer thread.
+    pub fn feed_segment(&self, buf: Vec<f32>) {
+        if !self.wants_segments() {
+            return;
+        }
+        // try_send on a capacity-1 queue: claim the slot or drop.
+        if self
+            .segment_slot
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            debug!(
+                "Live preview busy; dropping a {:.2}s speech segment",
+                buf.len() as f32 / WHISPER_SAMPLE_RATE as f32
+            );
+            return;
+        }
+        let sent = match self.tx.lock().unwrap().as_ref() {
+            Some(tx) => tx.send(StreamCmd::Segment(buf)).is_ok(),
+            None => false,
+        };
+        if !sent {
+            self.release_segment_slot();
+        }
+    }
+
+    /// Free the segment slot once the worker has handled a `StreamCmd::Segment`.
+    fn release_segment_slot(&self) {
+        self.segment_slot.store(false, Ordering::Release);
+    }
+
+    /// Whether the open session consumes completed VAD segments. Checked by the
+    /// recorder once per recording to skip segment accumulation entirely.
+    pub fn wants_segments(&self) -> bool {
+        self.open.load(Ordering::Relaxed) && self.segments.load(Ordering::Acquire)
+    }
+
     /// Whether a stream is pending or active.
     pub fn is_open(&self) -> bool {
         self.open.load(Ordering::Relaxed)
+    }
+}
+
+/// Chunk-assembly rules for the batch live preview. Pure (no engine, no Tauri)
+/// so the constraints stay unit-testable:
+///
+/// - segments shorter than [`MIN_CHUNK_SECS`] are merged into the next one;
+/// - anything longer than [`MAX_CHUNK_SECS`] is hard-split;
+/// - a chunk shorter than [`PAD_SHORT_CHUNK_SECS`] is padded with trailing
+///   silence (on this private copy — never the recording buffer);
+/// - at stop, leftover speech is only flushed if at least [`MIN_FINAL_SECS`].
+struct PreviewChunkAssembler {
+    pending: Vec<f32>,
+    min_chunk: usize,
+    max_chunk: usize,
+    min_final: usize,
+    pad_to: usize,
+}
+
+impl PreviewChunkAssembler {
+    fn new(sample_rate: u32) -> Self {
+        let samples = |secs: f32| (secs * sample_rate as f32).round() as usize;
+        Self {
+            pending: Vec::new(),
+            min_chunk: samples(MIN_CHUNK_SECS),
+            max_chunk: samples(MAX_CHUNK_SECS).max(1),
+            min_final: samples(MIN_FINAL_SECS),
+            pad_to: samples(PAD_SHORT_CHUNK_SECS),
+        }
+    }
+
+    /// Add one completed speech segment; return the chunks ready to transcribe
+    /// (in order). Too-short input is held back and merged with the next one.
+    fn push_segment(&mut self, segment: Vec<f32>) -> Vec<Vec<f32>> {
+        if self.pending.is_empty() {
+            self.pending = segment;
+        } else {
+            self.pending.extend_from_slice(&segment);
+        }
+        if self.pending.len() < self.min_chunk {
+            return Vec::new();
+        }
+
+        let mut rest = std::mem::take(&mut self.pending);
+        let mut chunks = Vec::new();
+        while rest.len() > self.max_chunk {
+            let tail = rest.split_off(self.max_chunk);
+            chunks.push(rest);
+            rest = tail;
+        }
+        if rest.len() >= self.min_chunk {
+            chunks.push(self.pad(rest));
+        } else {
+            // A short remainder after a hard split waits for the next segment.
+            self.pending = rest;
+        }
+        chunks
+    }
+
+    /// Flush the leftover speech at stop, if it is long enough to preview.
+    fn finish(&mut self) -> Option<Vec<f32>> {
+        let rest = std::mem::take(&mut self.pending);
+        (!rest.is_empty() && rest.len() >= self.min_final).then(|| self.pad(rest))
+    }
+
+    fn pad(&self, mut chunk: Vec<f32>) -> Vec<f32> {
+        if chunk.len() < self.pad_to {
+            chunk.resize(self.pad_to, 0.0);
+        }
+        chunk
+    }
+}
+
+/// Append one chunk's text to the growing preview, space-separated.
+fn append_preview_text(preview: &mut String, chunk_text: &str) {
+    let chunk_text = chunk_text.trim();
+    if chunk_text.is_empty() {
+        return;
+    }
+    if !preview.is_empty() {
+        preview.push(' ');
+    }
+    preview.push_str(chunk_text);
+}
+
+/// Whisper-family run extension carrying custom words as the initial prompt.
+/// Shared by batch transcription and the batch live preview so both decode
+/// with identical options. Non-whisper archs reject the whisper-kind
+/// extension with INVALID_ARG, so it is gated on the arch (see #1601).
+fn whisper_initial_prompt_extension(
+    custom_words: &[String],
+    model_is_whisper: bool,
+) -> Option<RunExtension> {
+    if custom_words.is_empty() || !model_is_whisper {
+        None
+    } else {
+        Some(RunExtension::Whisper(WhisperRunOptions {
+            initial_prompt: Some(custom_words.join(", ")),
+            ..Default::default()
+        }))
     }
 }
 
@@ -818,7 +982,11 @@ impl TranscriptionManager {
     /// model can't stream, the worker idles until finalize/cancel and reports
     /// `None` so the caller falls back to batch transcription. Frames sent
     /// before the stream begins queue on the channel and are not lost.
-    pub fn start_stream(&self) {
+    ///
+    /// `preview_segments` additionally routes completed VAD speech segments to
+    /// the worker, which — for batch transcribe-cpp models with a non-standard
+    /// `LiveMode` — transcribes each one as a disposable live preview.
+    pub fn start_stream(&self, preview_segments: bool) {
         if self.router.is_open() || self.active_stream_worker.load(Ordering::Acquire) != 0 {
             warn!("start_stream called while a stream worker is already active");
             return;
@@ -832,7 +1000,7 @@ impl TranscriptionManager {
             warn!("start_stream lost a race with another stream worker");
             return;
         }
-        let rx = self.router.open();
+        let rx = self.router.open(preview_segments);
         self.stream_active.store(false, Ordering::Release);
 
         let manager = self.clone();
@@ -926,6 +1094,24 @@ impl TranscriptionManager {
         };
 
         if !supports_streaming {
+            // Batch whisper-family model: with a non-standard live mode, show a
+            // chunked batch preview. The final text still comes from a full
+            // batch transcription on stop.
+            if matches!(engine, LoadedEngine::TranscribeCpp(_)) {
+                let settings = get_settings(&self.app_handle);
+                if settings.live_mode.wants_batch_preview() {
+                    self.run_chunked_preview(
+                        rx,
+                        engine,
+                        worker_id,
+                        &model_id,
+                        &settings,
+                        supports_translate,
+                        &languages,
+                    );
+                    return;
+                }
+            }
             self.return_engine(engine, &model_id);
             self.router.clear();
             drain_until_finalize(rx);
@@ -1095,6 +1281,10 @@ impl TranscriptionManager {
                         finalize_result = Some(result);
                         break;
                     }
+                    StreamCmd::Segment(_) => {
+                        // Native streaming already shows live text.
+                        self.router.release_segment_slot();
+                    }
                     StreamCmd::Cancel => {
                         stream.reset();
                         break;
@@ -1122,6 +1312,231 @@ impl TranscriptionManager {
         }
         // `_worker` drops here, clearing this worker's active/lease flags after
         // the engine has been returned to the pool.
+    }
+
+    /// Batch live preview for a non-streaming transcribe-cpp model: transcribe
+    /// each completed VAD speech segment with exactly the run options the final
+    /// batch transcription uses, and grow the overlay text at every pause.
+    ///
+    /// The preview is disposable. `Finalize` always replies `None`, so the
+    /// caller runs a full batch transcription of the whole recording (final
+    /// text unchanged); `Cancel` discards everything. The engine stays leased
+    /// for the whole session and is returned before replying.
+    #[allow(clippy::too_many_arguments)]
+    fn run_chunked_preview(
+        &self,
+        rx: mpsc::Receiver<StreamCmd>,
+        engine: LoadedEngine,
+        worker_id: u64,
+        model_id: &str,
+        settings: &AppSettings,
+        supports_translate: bool,
+        languages: &[String],
+    ) {
+        let (model_is_whisper, backend) = match &engine {
+            LoadedEngine::TranscribeCpp(session) => (
+                session.model().arch() == "whisper",
+                session.model().backend().to_string(),
+            ),
+            _ => {
+                self.return_engine(engine, model_id);
+                self.router.clear();
+                drain_until_finalize(rx);
+                return;
+            }
+        };
+
+        // Mirror the offline transcribe() run options for transcribe-cpp.
+        let effective_language =
+            effective_language_for_model(settings, self.model_manager.as_ref(), model_id);
+        let run_plan = transcribe_cpp_run_plan(
+            settings.translate_to_english,
+            &effective_language,
+            languages,
+            supports_translate,
+        );
+        let run_options = RunOptions {
+            task: run_plan.task,
+            language: run_plan.language,
+            target_language: run_plan.target_language,
+            family: whisper_initial_prompt_extension(&settings.custom_words, model_is_whisper),
+            ..Default::default()
+        };
+
+        self.stream_active.store(true, Ordering::Release);
+        self.touch_activity();
+        info!(
+            "Live preview (chunked batch) started (model '{}', backend '{}', mode {:?})",
+            model_id, backend, settings.live_mode
+        );
+
+        // `None` once the engine panicked and was discarded.
+        let mut engine = Some(engine);
+        let mut assembler = PreviewChunkAssembler::new(WHISPER_SAMPLE_RATE);
+        let mut preview = String::new();
+        let mut finalize_reply: Option<mpsc::Sender<Option<FinalizedStreamText>>> = None;
+
+        while let Ok(cmd) = rx.recv() {
+            match cmd {
+                // Frames are already captured in the recording; the preview
+                // works from completed segments only.
+                StreamCmd::Feed(_) => self.touch_activity(),
+                StreamCmd::Segment(segment) => {
+                    for chunk in assembler.push_segment(segment) {
+                        // Once stop/cancel has closed the route, the full batch
+                        // transcription (or the next recording) is waiting on
+                        // this engine: never start another preview chunk. This
+                        // bounds the extra stop latency to the chunk already
+                        // running. (The trailing segment flushed at stop is
+                        // normally dequeued before the route closes.)
+                        if !self.router.is_open() {
+                            debug!("Live preview: stop requested; skipping remaining chunks");
+                            break;
+                        }
+                        if !self.run_preview_chunk(
+                            &mut engine,
+                            worker_id,
+                            model_id,
+                            &chunk,
+                            &run_options,
+                            &mut preview,
+                        ) {
+                            break;
+                        }
+                    }
+                    self.router.release_segment_slot();
+                }
+                StreamCmd::Finalize(reply) => {
+                    // Leftover speech is always shorter than MIN_CHUNK_SECS
+                    // (longer input was already run), so this final flush
+                    // costs at most one padded ~1.25s clip.
+                    if let Some(chunk) = assembler.finish() {
+                        self.run_preview_chunk(
+                            &mut engine,
+                            worker_id,
+                            model_id,
+                            &chunk,
+                            &run_options,
+                            &mut preview,
+                        );
+                    }
+                    finalize_reply = Some(reply);
+                    break;
+                }
+                StreamCmd::Cancel => break,
+            }
+        }
+
+        debug!(
+            "Live preview (chunked batch) ended with {} preview chars",
+            preview.len()
+        );
+        if let Some(engine) = engine {
+            self.return_engine(engine, model_id);
+        }
+        if let Some(reply) = finalize_reply {
+            // Disposable preview: always fall back to full batch transcription.
+            let _ = reply.send(None);
+        }
+    }
+
+    /// Transcribe one preview chunk and emit the grown preview text. Returns
+    /// false when no usable engine remains (it panicked and was discarded).
+    fn run_preview_chunk(
+        &self,
+        engine: &mut Option<LoadedEngine>,
+        worker_id: u64,
+        model_id: &str,
+        chunk: &[f32],
+        run_options: &RunOptions,
+        preview: &mut String,
+    ) -> bool {
+        let Some(LoadedEngine::TranscribeCpp(session)) = engine.as_mut() else {
+            return false;
+        };
+        self.touch_activity();
+        let started = Instant::now();
+        match catch_unwind(AssertUnwindSafe(|| session.run(chunk, run_options))) {
+            Ok(Ok(transcript)) => {
+                let audio_secs = chunk.len() as f64 / WHISPER_SAMPLE_RATE as f64;
+                let compute_secs = started.elapsed().as_secs_f64();
+                debug!(
+                    "Live preview chunk: {:.2}s audio in {:.0}ms (RTF {:.2})",
+                    audio_secs,
+                    compute_secs * 1000.0,
+                    real_time_factor(audio_secs, compute_secs)
+                );
+                append_preview_text(preview, &transcript.text);
+                self.emit_stream_text(preview, "");
+                true
+            }
+            Ok(Err(e)) => {
+                warn!("Live preview chunk transcription failed: {}", e);
+                true
+            }
+            Err(payload) => {
+                let panic_msg = panic_payload_message(payload.as_ref());
+                error!(
+                    "Transcription engine panicked during live preview: {}. Reloading the model for the final transcription.",
+                    panic_msg
+                );
+                // Same policy as transcribe(): never reuse a panicked engine.
+                *engine = None;
+                *self
+                    .current_model_id
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = None;
+                let _ = self.app_handle.emit(
+                    "model-state-changed",
+                    ModelStateEvent {
+                        event_type: "unloaded".to_string(),
+                        model_id: None,
+                        model_name: None,
+                        error: Some(format!("Engine panicked: {}", panic_msg)),
+                    },
+                );
+                // Release the lease so the model reports unloaded, then start
+                // reloading now: the final batch transcription waits on the
+                // load instead of failing with "model not loaded".
+                let _ = self.active_engine_lease.compare_exchange(
+                    worker_id,
+                    0,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                );
+                info!(
+                    "Reloading model '{}' after live preview engine panic",
+                    model_id
+                );
+                self.initiate_model_load();
+                false
+            }
+        }
+    }
+
+    /// True once the engine is back in the mutex. If a stream worker still holds
+    /// it on lease (e.g. a live preview chunk still finishing after a cancel),
+    /// wait — bounded — for the worker to hand it back instead of failing with
+    /// "model not loaded". Without a lease this returns immediately, so plain
+    /// batch transcription is unaffected.
+    fn wait_for_leased_engine(&self) -> bool {
+        let started = Instant::now();
+        loop {
+            if self.lock_engine().is_some() {
+                return true;
+            }
+            if self.active_engine_lease.load(Ordering::Acquire) == 0 {
+                return false;
+            }
+            if started.elapsed() >= STREAM_FINALIZE_REPLY_TIMEOUT {
+                warn!(
+                    "Timed out after {:?} waiting for the stream worker to return the engine",
+                    STREAM_FINALIZE_REPLY_TIMEOUT
+                );
+                return false;
+            }
+            thread::sleep(ENGINE_LEASE_POLL_INTERVAL);
+        }
     }
 
     /// Return the leased engine to the mutex, unless the model was switched or
@@ -1237,8 +1652,9 @@ impl TranscriptionManager {
                 is_loading = self.loading_condvar.wait(is_loading).unwrap();
             }
 
-            let engine_guard = self.lock_engine();
-            if engine_guard.is_none() {
+            drop(is_loading);
+
+            if !self.wait_for_leased_engine() {
                 return Err(anyhow::anyhow!("Model is not loaded for transcription."));
             }
         }
@@ -1341,14 +1757,10 @@ impl TranscriptionManager {
                         // whisper run extension to a non-whisper arch is rejected
                         // with INVALID_ARG, so skip it there and let the fuzzy
                         // post-correction handle custom words instead.
-                        let family = if settings.custom_words.is_empty() || !model_is_whisper {
-                            None
-                        } else {
-                            Some(RunExtension::Whisper(WhisperRunOptions {
-                                initial_prompt: Some(settings.custom_words.join(", ")),
-                                ..Default::default()
-                            }))
-                        };
+                        let family = whisper_initial_prompt_extension(
+                            &settings.custom_words,
+                            model_is_whisper,
+                        );
 
                         let run_plan = transcribe_cpp_run_plan(
                             settings.translate_to_english,
@@ -1900,7 +2312,7 @@ fn cpp_translation_task(
 fn drain_until_finalize(rx: mpsc::Receiver<StreamCmd>) {
     while let Ok(cmd) = rx.recv() {
         match cmd {
-            StreamCmd::Feed(_) => {}
+            StreamCmd::Feed(_) | StreamCmd::Segment(_) => {}
             StreamCmd::Finalize(reply) => {
                 let _ = reply.send(None);
                 break;
@@ -2184,9 +2596,176 @@ pub fn get_available_accelerators() -> AvailableAccelerators {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::LiveMode;
 
     fn languages(codes: &[&str]) -> Vec<String> {
         codes.iter().map(|code| (*code).to_string()).collect()
+    }
+
+    const SR: u32 = WHISPER_SAMPLE_RATE;
+
+    fn secs(n: f32) -> usize {
+        (n * SR as f32).round() as usize
+    }
+
+    fn speech(n_secs: f32, value: f32) -> Vec<f32> {
+        vec![value; secs(n_secs)]
+    }
+
+    #[test]
+    fn preview_chunks_merge_short_segments_into_the_next() {
+        let mut assembler = PreviewChunkAssembler::new(SR);
+        assert!(assembler.push_segment(speech(0.4, 1.0)).is_empty());
+        assert!(assembler.push_segment(speech(0.5, 2.0)).is_empty());
+        // 0.4 + 0.5 + 0.3 = 1.2s >= MIN_CHUNK_SECS -> one merged chunk, in order,
+        // padded to PAD_SHORT_CHUNK_SECS.
+        let chunks = assembler.push_segment(speech(0.3, 3.0));
+        assert_eq!(chunks.len(), 1);
+        let chunk = &chunks[0];
+        assert_eq!(chunk.len(), secs(PAD_SHORT_CHUNK_SECS));
+        assert_eq!(chunk[0], 1.0);
+        assert_eq!(chunk[secs(0.4)], 2.0);
+        assert_eq!(chunk[secs(0.9)], 3.0);
+        assert!(chunk[secs(1.2)..].iter().all(|s| *s == 0.0));
+        assert!(assembler.finish().is_none());
+    }
+
+    #[test]
+    fn preview_chunks_pad_only_chunks_shorter_than_the_pad_length() {
+        let mut assembler = PreviewChunkAssembler::new(SR);
+        let chunks = assembler.push_segment(speech(1.0, 1.0));
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].len(), secs(PAD_SHORT_CHUNK_SECS));
+        assert!(chunks[0][secs(1.0)..].iter().all(|s| *s == 0.0));
+
+        let chunks = assembler.push_segment(speech(3.0, 1.0));
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].len(), secs(3.0));
+        assert!(chunks[0].iter().all(|s| *s == 1.0));
+    }
+
+    #[test]
+    fn preview_chunks_hard_split_long_segments() {
+        let mut assembler = PreviewChunkAssembler::new(SR);
+        // 32s -> 15s + 15s + 2s.
+        let chunks = assembler.push_segment(speech(32.0, 1.0));
+        let lengths: Vec<usize> = chunks.iter().map(Vec::len).collect();
+        assert_eq!(lengths, vec![secs(15.0), secs(15.0), secs(2.0)]);
+        assert!(chunks.iter().all(|c| c.len() <= secs(MAX_CHUNK_SECS)));
+
+        // Exactly MAX_CHUNK_SECS is not split.
+        let chunks = assembler.push_segment(speech(MAX_CHUNK_SECS, 1.0));
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].len(), secs(MAX_CHUNK_SECS));
+    }
+
+    #[test]
+    fn preview_chunks_hold_a_short_split_remainder_for_the_next_segment() {
+        let mut assembler = PreviewChunkAssembler::new(SR);
+        // 15.5s -> 15s now, 0.5s held (below MIN_CHUNK_SECS).
+        let chunks = assembler.push_segment(speech(15.5, 1.0));
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].len(), secs(15.0));
+
+        let chunks = assembler.push_segment(speech(0.6, 2.0));
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].len(), secs(PAD_SHORT_CHUNK_SECS));
+        assert_eq!(chunks[0][0], 1.0);
+        assert_eq!(chunks[0][secs(0.5)], 2.0);
+    }
+
+    #[test]
+    fn preview_final_flush_respects_min_final_secs() {
+        let mut assembler = PreviewChunkAssembler::new(SR);
+        assert!(assembler.push_segment(speech(0.34, 1.0)).is_empty());
+        assert!(
+            assembler.finish().is_none(),
+            "0.34s is below MIN_FINAL_SECS"
+        );
+
+        let mut assembler = PreviewChunkAssembler::new(SR);
+        assert!(assembler
+            .push_segment(speech(MIN_FINAL_SECS, 1.0))
+            .is_empty());
+        let flushed = assembler.finish().expect("MIN_FINAL_SECS is flushed");
+        assert_eq!(flushed.len(), secs(PAD_SHORT_CHUNK_SECS));
+        assert!(assembler.finish().is_none(), "finish drains pending audio");
+
+        let mut assembler = PreviewChunkAssembler::new(SR);
+        assert!(assembler.finish().is_none());
+    }
+
+    #[test]
+    fn preview_text_appends_trimmed_chunks_with_single_spaces() {
+        let mut preview = String::new();
+        append_preview_text(&mut preview, "  Hello there. ");
+        append_preview_text(&mut preview, "   ");
+        append_preview_text(&mut preview, "How are you?");
+        assert_eq!(preview, "Hello there. How are you?");
+    }
+
+    #[test]
+    fn whisper_prompt_extension_only_for_whisper_with_custom_words() {
+        let words = languages(&["Handy", "Tauri"]);
+        assert!(whisper_initial_prompt_extension(&[], true).is_none());
+        assert!(whisper_initial_prompt_extension(&words, false).is_none());
+        match whisper_initial_prompt_extension(&words, true) {
+            Some(RunExtension::Whisper(opts)) => {
+                assert_eq!(opts.initial_prompt.as_deref(), Some("Handy, Tauri"));
+            }
+            _ => panic!("expected a whisper run extension"),
+        }
+    }
+
+    #[test]
+    fn standard_router_session_ignores_segments() {
+        let router = StreamRouter::new();
+        let rx = router.open(LiveMode::Standard.wants_batch_preview());
+        assert!(!router.wants_segments());
+        router.feed_segment(vec![1.0; 16]);
+        router.feed(&[0.5; 4]);
+        let cmds: Vec<StreamCmd> = rx.try_iter().collect();
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(&cmds[0], StreamCmd::Feed(pcm) if pcm.len() == 4));
+    }
+
+    #[test]
+    fn router_drops_segments_while_the_worker_is_busy() {
+        let router = StreamRouter::new();
+        let rx = router.open(LiveMode::Preview.wants_batch_preview());
+        assert!(router.wants_segments());
+
+        router.feed_segment(vec![1.0; 8]);
+        // Worker has not handled the first segment yet: dropped, never blocks.
+        router.feed_segment(vec![2.0; 8]);
+        let cmds: Vec<StreamCmd> = rx.try_iter().collect();
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(&cmds[0], StreamCmd::Segment(buf) if buf[0] == 1.0));
+
+        router.release_segment_slot();
+        router.feed_segment(vec![3.0; 8]);
+        let cmds: Vec<StreamCmd> = rx.try_iter().collect();
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(&cmds[0], StreamCmd::Segment(buf) if buf[0] == 3.0));
+
+        // Closing the route stops segment delivery.
+        let _tx = router.take();
+        assert!(!router.wants_segments());
+        router.release_segment_slot();
+        router.feed_segment(vec![4.0; 8]);
+        assert_eq!(rx.try_iter().count(), 0);
+    }
+
+    #[test]
+    fn reopening_the_router_resets_segment_admission() {
+        let router = StreamRouter::new();
+        let _rx = router.open(true);
+        router.feed_segment(vec![1.0; 8]); // slot taken, never released
+        router.clear();
+
+        let rx = router.open(true);
+        router.feed_segment(vec![2.0; 8]);
+        assert_eq!(rx.try_iter().count(), 1);
     }
 
     #[test]

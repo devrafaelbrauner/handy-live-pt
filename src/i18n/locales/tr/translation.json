@@ -284,6 +284,15 @@
           "maximum": "En yüksek doğruluk (varsayılan)"
         }
       },
+      "liveMode": {
+        "label": "Canlı mod",
+        "description": "Yerel akış desteği olmayan modellerde (Whisper ailesi) konuşurken metni gösterir. Önizleme, her duraklamada cümleyi yazıya döker; yapıştırılan metin yine durdurduğunuzda tüm kaydın yazıya dökülmesinden gelir. Kayıt sırasında ek işlem gücü kullanır.",
+        "options": {
+          "standard": "Standart (varsayılan)",
+          "preview": "Duraklamalarda önizleme",
+          "chunksPaste": "Parça parça yapıştır (yakında)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "transcribe.cpp Hızlandırması",

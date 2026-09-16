@@ -342,9 +342,21 @@ fn create_audio_recorder(
             }
         })
         .with_audio_callback({
-            let router = stream_router;
+            let router = Arc::clone(&stream_router);
             move |frame| {
                 router.feed(frame);
+            }
+        })
+        // Completed VAD speech segments feed the batch live preview. The gate
+        // is read once per recording, so the default mode never accumulates.
+        .with_segment_gate({
+            let router = Arc::clone(&stream_router);
+            move || router.wants_segments()
+        })
+        .with_segment_callback({
+            let router = stream_router;
+            move |segment| {
+                router.feed_segment(segment);
             }
         });
 

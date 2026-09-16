@@ -284,6 +284,15 @@
           "maximum": "Maksymalna dokładność (domyślnie)"
         }
       },
+      "liveMode": {
+        "label": "Tryb na żywo",
+        "description": "Pokazuje tekst podczas mówienia w modelach bez natywnego strumieniowania (rodzina Whisper). Podgląd transkrybuje każde zdanie po pauzie; wklejany tekst nadal pochodzi z transkrypcji całego nagrania po zatrzymaniu. Wymaga dodatkowych obliczeń podczas nagrywania.",
+        "options": {
+          "standard": "Standardowy (domyślny)",
+          "preview": "Podgląd przy pauzach",
+          "chunksPaste": "Wklejanie fragmentami (wkrótce)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Akceleracja Whisper",

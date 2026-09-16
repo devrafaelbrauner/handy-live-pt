@@ -284,6 +284,15 @@
           "maximum": "Precisione massima (predefinito)"
         }
       },
+      "liveMode": {
+        "label": "Modalità live",
+        "description": "Mostra il testo mentre parli con i modelli senza streaming nativo (famiglia Whisper). L'anteprima trascrive ogni frase quando fai una pausa; il testo incollato deriva comunque dalla trascrizione dell'intera registrazione all'arresto. Richiede elaborazione aggiuntiva durante la registrazione.",
+        "options": {
+          "standard": "Standard (predefinito)",
+          "preview": "Anteprima alle pause",
+          "chunksPaste": "Incolla a blocchi (in arrivo)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Accelerazione Whisper",

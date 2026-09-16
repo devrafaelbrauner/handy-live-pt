@@ -284,6 +284,15 @@
           "maximum": "Maximal noggrannhet (standard)"
         }
       },
+      "liveMode": {
+        "label": "Liveläge",
+        "description": "Visar text medan du pratar med modeller utan inbyggd streaming (Whisper-familjen). Förhandsvisningen transkriberar varje mening när du pausar; den inklistrade texten kommer fortfarande från transkriberingen av hela inspelningen när du stoppar. Använder extra beräkningar under inspelningen.",
+        "options": {
+          "standard": "Standard",
+          "preview": "Förhandsvisning vid pauser",
+          "chunksPaste": "Klistra in i delar (kommer snart)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "Whisper-acceleration",

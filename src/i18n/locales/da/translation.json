@@ -284,6 +284,15 @@
           "maximum": "Maksimal nøjagtighed (standard)"
         }
       },
+      "liveMode": {
+        "label": "Livetilstand",
+        "description": "Viser tekst, mens du taler, med modeller uden indbygget streaming (Whisper-familien). Forhåndsvisningen transskriberer hver sætning, når du holder pause; den indsatte tekst kommer stadig fra transskriptionen af hele optagelsen, når du stopper. Bruger ekstra beregning under optagelsen.",
+        "options": {
+          "standard": "Standard",
+          "preview": "Forhåndsvisning ved pauser",
+          "chunksPaste": "Indsæt i bidder (kommer snart)"
+        }
+      },
       "acceleration": {
         "transcribe": {
           "title": "transcribe.cpp-acceleration",

@@ -7,7 +7,9 @@ use crate::managers::history::HistoryManager;
 use crate::managers::model::ModelManager;
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
-use crate::settings::{get_settings, AppSettings, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID};
+use crate::settings::{
+    get_settings, AppSettings, LiveMode, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID,
+};
 use crate::shortcut;
 use crate::tray::{set_tray_state, TrayIconState};
 use crate::utils::{
@@ -116,6 +118,45 @@ where
 
 fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool {
     style == OverlayStyle::Live && is_streaming
+}
+
+/// Pre-recording live-text decision for one recording.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LiveStartPlan {
+    /// Spawn the stream worker (native streaming, or the batch live preview).
+    use_live_worker: bool,
+    /// Route completed VAD speech segments to the worker (batch live preview).
+    /// Never set for natively streaming models or with VAD disabled, since no
+    /// segments would be consumed/produced.
+    preview_segments: bool,
+    vad_policy: VadPolicy,
+}
+
+/// Decide whether to spawn a live worker and which VAD profile to record with.
+///
+/// With [`LiveMode::Standard`] this is exactly the historical behaviour: only
+/// streaming-capable models spawn a worker. Any other live mode also spawns
+/// one for batch models (chunked preview), but keeps the offline VAD profile —
+/// the preview must not change what gets recorded.
+fn live_start_plan(
+    vad_enabled: bool,
+    model_supports_streaming: bool,
+    live_mode: LiveMode,
+) -> LiveStartPlan {
+    let vad_policy = if !vad_enabled {
+        VadPolicy::Disabled
+    } else if model_supports_streaming {
+        VadPolicy::Streaming
+    } else {
+        VadPolicy::Offline
+    };
+    LiveStartPlan {
+        use_live_worker: model_supports_streaming || live_mode.wants_batch_preview(),
+        preview_segments: live_mode.wants_batch_preview()
+            && !model_supports_streaming
+            && vad_enabled,
+        vad_policy,
+    }
 }
 
 async fn post_process_transcription(settings: &AppSettings, transcription: &str) -> Option<String> {
@@ -506,24 +547,29 @@ impl ShortcutAction for TranscribeAction {
             .as_ref()
             .map(|m| m.supports_streaming)
             .unwrap_or(false);
-        let vad_policy = if !settings.vad_enabled {
-            VadPolicy::Disabled
-        } else if model_supports_streaming {
-            VadPolicy::Streaming
-        } else {
-            VadPolicy::Offline
-        };
-        if model_supports_streaming {
-            tm.start_stream();
+        let LiveStartPlan {
+            use_live_worker,
+            preview_segments,
+            vad_policy,
+        } = live_start_plan(
+            settings.vad_enabled,
+            model_supports_streaming,
+            settings.live_mode,
+        );
+        if use_live_worker {
+            tm.start_stream(preview_segments);
         }
         let plan_elapsed = plan_started.elapsed();
 
-        // Sizing the overlay follows the same advertised capability. A model that
-        // doesn't stream (or whose capability is not known yet) gets the compact
-        // pill instead of an oversized transparent live window.
+        // Sizing the overlay follows the same live-worker decision. A recording
+        // without live text (batch model in Standard mode, or a capability not
+        // known yet) gets the compact pill instead of an oversized transparent
+        // live window.
         let overlay_started = Instant::now();
         match settings.overlay_style {
-            OverlayStyle::Live if model_supports_streaming => utils::show_streaming_overlay(app),
+            style if should_use_streaming_overlay(style, use_live_worker) => {
+                utils::show_streaming_overlay(app)
+            }
             OverlayStyle::Live | OverlayStyle::Minimal => show_recording_overlay(app),
             OverlayStyle::None => {} // show_overlay_state no-ops on None anyway
         }
@@ -952,10 +998,11 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_unless_cancelled, is_blank_transcription, should_use_streaming_overlay,
-        strip_think_block,
+        complete_unless_cancelled, is_blank_transcription, live_start_plan,
+        should_use_streaming_overlay, strip_think_block, LiveStartPlan,
     };
-    use crate::settings::OverlayStyle;
+    use crate::audio_toolkit::VadPolicy;
+    use crate::settings::{LiveMode, OverlayStyle};
     use std::future;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -1038,5 +1085,76 @@ mod tests {
         assert!(!should_use_streaming_overlay(OverlayStyle::Minimal, false));
         assert!(!should_use_streaming_overlay(OverlayStyle::None, true));
         assert!(!should_use_streaming_overlay(OverlayStyle::None, false));
+    }
+
+    /// Primary acceptance criterion: the default `Standard` live mode must be
+    /// byte-identical to the behaviour before live modes existed — batch
+    /// models spawn no worker and record with the offline VAD profile.
+    #[test]
+    fn standard_live_mode_never_spawns_a_worker_for_batch_models() {
+        for vad_enabled in [true, false] {
+            let plan = live_start_plan(vad_enabled, false, LiveMode::Standard);
+            assert!(!plan.use_live_worker);
+            assert!(!plan.preview_segments);
+            assert_eq!(
+                plan.vad_policy,
+                if vad_enabled {
+                    VadPolicy::Offline
+                } else {
+                    VadPolicy::Disabled
+                }
+            );
+        }
+        // ...and a Live overlay style still shows the compact pill for them.
+        let plan = live_start_plan(true, false, LiveMode::Standard);
+        assert!(!should_use_streaming_overlay(
+            OverlayStyle::Live,
+            plan.use_live_worker
+        ));
+    }
+
+    #[test]
+    fn standard_live_mode_keeps_native_streaming_unchanged() {
+        assert_eq!(
+            live_start_plan(true, true, LiveMode::Standard),
+            LiveStartPlan {
+                use_live_worker: true,
+                preview_segments: false,
+                vad_policy: VadPolicy::Streaming,
+            }
+        );
+        assert_eq!(
+            live_start_plan(false, true, LiveMode::Standard),
+            LiveStartPlan {
+                use_live_worker: true,
+                preview_segments: false,
+                vad_policy: VadPolicy::Disabled,
+            }
+        );
+    }
+
+    #[test]
+    fn preview_modes_spawn_a_worker_but_keep_the_offline_vad_profile() {
+        for mode in [LiveMode::Preview, LiveMode::ChunksPaste] {
+            assert_eq!(
+                live_start_plan(true, false, mode),
+                LiveStartPlan {
+                    use_live_worker: true,
+                    preview_segments: true,
+                    vad_policy: VadPolicy::Offline,
+                }
+            );
+            // Without VAD there are no segment boundaries to preview.
+            assert!(!live_start_plan(false, false, mode).preview_segments);
+            // Native streaming models are unaffected by the preview mode.
+            assert_eq!(
+                live_start_plan(true, true, mode),
+                live_start_plan(true, true, LiveMode::Standard)
+            );
+            assert!(should_use_streaming_overlay(
+                OverlayStyle::Live,
+                live_start_plan(true, false, mode).use_live_worker
+            ));
+        }
     }
 }
