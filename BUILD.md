@@ -257,25 +257,3 @@ Artifacts then land in `C:\h\release\...` instead of the repo's
 `src-tauri\target\`. Open a **new terminal** if you persisted the variable —
 it is only picked up by freshly started processes. Then `bun run tauri dev`
 and `bun run tauri build` work normally.
-
-### Windows `tauri build` fails at bundling with `program not found`
-
-If the build compiles all the way to `Built application at: ...\handy.exe` and
-then fails with:
-
-```
-Signing C:\...\handy.exe with a custom signing command
-failed to bundle project `program not found`
-```
-
-that's the code-signing step: `tauri.conf.json` configures a custom
-`signCommand` (`trusted-signing-cli`, Azure Trusted Signing) that only exists
-in the release CI environment. Local development doesn't need it:
-
-```powershell
-# Development (no bundling/signing at all):
-bun run tauri dev
-
-# Or compile a release binary without the installer/signing step:
-bun run tauri build --no-bundle
-```
