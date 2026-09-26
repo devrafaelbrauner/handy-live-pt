@@ -373,6 +373,25 @@ jobs:
             '.bundle.macOS.frameworks = [$lib]' \
             src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
 
+      # Unsigned macOS builds are ad-hoc signed (no Team ID), so library validation
+      # rejects the bundled ad-hoc ONNX Runtime dylib (x86_64) at launch. Keep hardened
+      # runtime (it blocks DYLD_* injection) and relax only library validation, in a
+      # temp copy of Entitlements.plist; the repo file and signed builds are untouched.
+      - name: Disable library validation (unsigned macOS)
+        if: ${{ contains(inputs.platform, 'macos') && !inputs.sign-binaries }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENT="$RUNNER_TEMP/Entitlements.unsigned.plist"
+          cp src-tauri/Entitlements.plist "$ENT"
+          /usr/libexec/PlistBuddy -c 'Add :com.apple.security.cs.disable-library-validation bool true' "$ENT"
+          plutil -lint "$ENT"
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.cs.disable-library-validation' "$ENT")" = true ] || { echo "ERROR: entitlement not set in $ENT" >&2; exit 1; }
+          jq --arg ent "$ENT" '.bundle.macOS.entitlements = $ent' src-tauri/tauri.conf.json > tmp.json
+          mv tmp.json src-tauri/tauri.conf.json
+          jq -e --arg ent "$ENT" '.bundle.macOS.entitlements == $ent and .bundle.macOS.hardenedRuntime == true' src-tauri/tauri.conf.json
+          echo "UNSIGNED-ENTITLEMENTS: OK path=$ENT disable-library-validation=true hardenedRuntime=true"
+
       - name: Install ONNX Runtime (x86_64 Linux, Ubuntu 22.04)
         if: contains(inputs.platform, 'ubuntu-22.04') && inputs.target == 'x86_64-unknown-linux-gnu'
         shell: bash
@@ -618,6 +637,32 @@ jobs:
               echo "OK: $libname"
             fi
           done
+
+      # Unsigned macOS: the dylib check above proves presence, not loadability;
+      # dyld library validation only fails at launch. --help exits before Tauri starts.
+      - name: Verify macOS app launches (unsigned)
+        if: ${{ contains(inputs.platform, 'macos') && !inputs.sign-binaries }}
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$(find "src-tauri/target/${{ inputs.target }}/${{ steps.build-profile.outputs.profile }}/bundle/macos" -maxdepth 1 -name '*.app' -type d -print -quit)"
+          [ -n "$APP" ] || { echo "ERROR: no .app bundle found" >&2; exit 1; }
+          SIG="$(codesign -dv "$APP" 2>&1)"
+          echo "$SIG" | grep -E '^(CodeDirectory|Signature)'
+          echo "$SIG" | grep -q '^CodeDirectory .*flags=.*runtime' || { echo "ERROR: unsigned app is not signed with hardened runtime" >&2; exit 1; }
+          ENTS="$(mktemp)"
+          codesign -d --entitlements - --xml "$APP" > "$ENTS"
+          DLV="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.cs.disable-library-validation' "$ENTS" 2>/dev/null || true)"
+          [ "$DLV" = true ] || { echo "ERROR: app entitlements lack com.apple.security.cs.disable-library-validation" >&2; exit 1; }
+          case "${{ inputs.target }}" in x86_64-*) A=x86_64 ;; *) A=arm64 ;; esac
+          if [ "$A" = x86_64 ] && [ "$(uname -m)" = arm64 ] && ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            sudo softwareupdate --install-rosetta --agree-to-license || true
+            arch -x86_64 /usr/bin/true 2>/dev/null || { echo "::error::Rosetta 2 unavailable on this arm64 runner; x86_64 launch not verified"; exit 1; }
+          fi
+          OUT="$(arch -"$A" "$APP/Contents/MacOS/handy" --help 2>&1)" || { echo "$OUT" >&2; echo "ERROR: handy failed to launch" >&2; exit 1; }
+          echo "$OUT" | grep -q '^Usage: handy' || { echo "$OUT" >&2; echo "ERROR: unexpected --help output" >&2; exit 1; }
+          echo "LAUNCH-GUARD: PASS target=${{ inputs.target }} runner=$(uname -m) exec=arch -$A runtime=yes disable-library-validation=yes"
 
       - name: Upload artifacts (macOS)
         if: inputs.upload-artifacts && contains(inputs.platform, 'macos')
