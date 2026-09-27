@@ -19,3 +19,8 @@ src-tauri/src/catalog/catalog.json
 # Misc
 .DS_Store
 *.log
+
+# Corpus F0b (gerado por scripts/corpus_f0b.py)
+docs/corpus-f0b/leitura.html
+docs/corpus-f0b/blocos
+scripts/corpus_f0b_leitura.html

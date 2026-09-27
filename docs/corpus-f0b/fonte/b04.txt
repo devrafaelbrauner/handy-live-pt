@@ -1,0 +1,118 @@
+# b04 | Tecnologia e trabalho
+mic: headset
+ambiente: silencioso
+nota: Termos em inglês, endereços e versões. Pronuncie os termos em inglês como você falaria no trabalho, sem forçar sotaque.
+
+@ f01 | ingles
+leia: Abri um pull request no GitHub com a correção do bug de login. O build passou no CI, mas ainda falta o code review de alguém do time de backend.
+alvo:
+Abri um pull request no GitHub com a correção do bug de login. O build passou no CI, mas ainda falta o code review de alguém do time de backend.
+
+@ f02 | ingles pergunta
+leia: Você já fez o deploy da nova versão em produção ou ainda está em staging? Preciso saber antes de avisar os usuários.
+alvo:
+Você já fez o deploy da nova versão em produção ou ainda está em staging? Preciso saber antes de avisar os usuários.
+
+@ f03 | ingles
+leia: O Claude Opus respondeu em menos de dois segundos, mas o custo por milhão de tokens ficou alto. Vamos testar o Sonnet e comparar a latência no dashboard.
+alvo:
+O Claude Opus respondeu em menos de dois segundos, mas o custo por milhão de tokens ficou alto. Vamos testar o Sonnet e comparar a latência no dashboard.
+
+@ s01 | silencio
+
+@ f04 | ingles numeros
+leia: Manda o relatório para rafael ponto brauner arroba exemplo ponto com ponto br, com cópia para suporte arroba exemplo ponto com.
+alvo:
+Manda o relatório para rafael.brauner@exemplo.com.br, com cópia para suporte@exemplo.com.
+
+@ f05 | ingles
+leia: O link da documentação é github ponto com barra cjpais barra handy. Dá uma olhada no README antes de rodar o projeto.
+alvo:
+O link da documentação é github.com/cjpais/handy. Dá uma olhada no README antes de rodar o projeto.
+
+@ f06 | ingles paragrafos pausa
+leia: Resumo da sprint. ⏸ Entregamos o novo fluxo de onboarding, a integração com o Google Calendar e a correção do crash no app do Mac. O feedback dos usuários beta foi bem positivo. ⏸ Ficou para a próxima sprint o refactoring do módulo de pagamentos e os testes end-to-end com o Playwright. ⏸ O principal risco é a dependência da API externa, que tem um rate limit baixo e às vezes retorna timeout.
+alvo:
+Resumo da sprint.
+
+Entregamos o novo fluxo de onboarding, a integração com o Google Calendar e a correção do crash no app do Mac. O feedback dos usuários beta foi bem positivo.
+
+Ficou para a próxima sprint o refactoring do módulo de pagamentos e os testes end-to-end com o Playwright.
+
+O principal risco é a dependência da API externa, que tem um rate limit baixo e às vezes retorna timeout.
+
+@ f07 | ingles pergunta
+leia: Qual modelo de speech-to-text você recomenda para português rodando offline? O Whisper large turbo ou o Parakeet?
+alvo:
+Qual modelo de speech-to-text você recomenda para português rodando offline? O Whisper large turbo ou o Parakeet?
+
+@ s02 | silencio
+
+@ f08 | ingles lista
+leia: Para configurar o ambiente: primeiro, clonar o repositório e rodar bun install. Segundo, instalar o Rust pelo rustup. Terceiro, rodar bun run tauri dev e esperar o build terminar.
+alvo:
+Para configurar o ambiente:
+1. Clonar o repositório e rodar bun install
+2. Instalar o Rust pelo rustup
+3. Rodar bun run tauri dev e esperar o build terminar
+
+@ f09 | ingles numeros
+leia: O Kubernetes reiniciou o pod três vezes por falta de memória. Aumentei o limite para dois gigabytes e coloquei um alerta no Datadog.
+alvo:
+O Kubernetes reiniciou o pod três vezes por falta de memória. Aumentei o limite para 2 GB e coloquei um alerta no Datadog.
+
+@ f10 | ingles pergunta
+leia: Você consegue fazer o merge da branch de feature na main hoje, ou prefere esperar o QA liberar?
+alvo:
+Você consegue fazer o merge da branch de feature na main hoje, ou prefere esperar o QA liberar?
+
+@ f11 | ingles numeros
+leia: A versão zero ponto nove ponto seis corrigiu o problema de assinatura no macOS. A próxima, um ponto zero, vai trazer o modelo novo em português.
+alvo:
+A versão 0.9.6 corrigiu o problema de assinatura no macOS. A próxima, 1.0, vai trazer o modelo novo em português.
+
+@ s03 | silencio
+
+@ f12 | ingles pergunta
+leia: Alguém tem o login do Figma do time? Preciso exportar os assets do novo layout em SVG até o fim da tarde.
+alvo:
+Alguém tem o login do Figma do time? Preciso exportar os assets do novo layout em SVG até o fim da tarde.
+
+@ f13 | ingles
+leia: Salvei a chave da API no Keychain e removi o arquivo ponto env do repositório, para não vazar no histórico do git.
+alvo:
+Salvei a chave da API no Keychain e removi o arquivo .env do repositório, para não vazar no histórico do git.
+
+@ f14 | ingles paragrafos pergunta pausa
+leia: Oi, time. ⏸ O backup do banco de dados falhou de novo esta madrugada, às três e dez. O log mostra que o disco da VPS chegou a noventa e sete por cento. ⏸ Já limpei os arquivos temporários e o espaço livre voltou para trinta por cento, mas precisamos de uma solução definitiva. Alguém pode abrir um ticket para aumentar o volume ou mover os backups para o S3?
+alvo:
+Oi, time.
+
+O backup do banco de dados falhou de novo esta madrugada, às 3h10. O log mostra que o disco da VPS chegou a 97%.
+
+Já limpei os arquivos temporários e o espaço livre voltou para 30%, mas precisamos de uma solução definitiva. Alguém pode abrir um ticket para aumentar o volume ou mover os backups para o S3?
+
+@ f15 | ingles paragrafos numeros pausa
+leia: Sobre o incidente de ontem à noite. ⏸ Por volta das vinte e três horas, o load balancer começou a devolver erro quinhentos e dois para cerca de quinze por cento das requisições. A causa foi um health check mal configurado depois do último deploy, que tirava instâncias saudáveis do pool. ⏸ Fizemos o rollback às vinte e três e quarenta e o tráfego normalizou em cinco minutos. ⏸ Como ação preventiva, vamos adicionar um teste de smoke no pipeline e revisar os alertas do Grafana para disparar antes.
+alvo:
+Sobre o incidente de ontem à noite.
+
+Por volta das 23h, o load balancer começou a devolver erro 502 para cerca de 15% das requisições. A causa foi um health check mal configurado depois do último deploy, que tirava instâncias saudáveis do pool.
+
+Fizemos o rollback às 23h40 e o tráfego normalizou em cinco minutos.
+
+Como ação preventiva, vamos adicionar um teste de smoke no pipeline e revisar os alertas do Grafana para disparar antes.
+
+@ f16 | ingles lista
+leia: Checklist do release: primeiro, atualizar o changelog. Segundo, subir a versão no package ponto json e no Cargo ponto toml. Terceiro, criar a tag e esperar o GitHub Actions gerar os instaladores. Quarto, testar o DMG num Mac limpo antes de publicar.
+alvo:
+Checklist do release:
+1. Atualizar o changelog
+2. Subir a versão no package.json e no Cargo.toml
+3. Criar a tag e esperar o GitHub Actions gerar os instaladores
+4. Testar o DMG num Mac limpo antes de publicar
+
+@ f17 | ingles pergunta
+leia: Você viu que o Apple Intelligence agora roda o modelo on-device em português? Queria testar o Foundation Models no app antes de pagar outra API na nuvem.
+alvo:
+Você viu que o Apple Intelligence agora roda o modelo on-device em português? Queria testar o Foundation Models no app antes de pagar outra API na nuvem.

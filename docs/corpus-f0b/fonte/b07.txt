@@ -1,0 +1,108 @@
+# b07 | Fala espontânea, com barulho
+mic: embutido
+ambiente: ruido
+nota: Ligue a TV ou um ventilador em volume baixo. As palavras em _itálico_ são muletas e repetições: fale-as de propósito, elas não devem aparecer no texto final. Solte a fala, sem ler como locutor.
+
+@ f01 | muletas pergunta
+leia: _É_... eu acho que a gente podia, _tipo_, sair mais cedo amanhã, _né_? Pra pegar menos trânsito na volta.
+alvo:
+Eu acho que a gente podia sair mais cedo amanhã. Pra pegar menos trânsito na volta.
+
+@ f02 | muletas pergunta
+leia: _Hã_, você viu onde eu deixei a chave do carro? Eu _eu_ tenho certeza que deixei em cima da mesa da sala.
+alvo:
+Você viu onde eu deixei a chave do carro? Eu tenho certeza que deixei em cima da mesa da sala.
+
+@ f03 | muletas paragrafos numeros pausa
+leia: Então, sobre o plantão de ontem, _né_, foi bem puxado. Chegaram, _tipo_, uns seis pacientes graves ao mesmo tempo, e a gente tava com um médico a menos. ⏸ _É_... o que eu queria propor é que, nos dias de maior movimento, a gente tenha um plantonista de sobreaviso, _né_, que possa ser chamado em até trinta minutos. ⏸ Acho que isso resolve boa parte do problema sem aumentar muito o custo.
+alvo:
+Então, sobre o plantão de ontem, foi bem puxado. Chegaram uns seis pacientes graves ao mesmo tempo, e a gente tava com um médico a menos.
+
+O que eu queria propor é que, nos dias de maior movimento, a gente tenha um plantonista de sobreaviso, que possa ser chamado em até 30 minutos.
+
+Acho que isso resolve boa parte do problema sem aumentar muito o custo.
+
+@ s01 | silencio
+
+@ f04 | muletas pergunta
+leia: _Tipo_, você acha que vale a pena trocar de celular agora ou é melhor esperar o lançamento do ano que vem?
+alvo:
+Você acha que vale a pena trocar de celular agora ou é melhor esperar o lançamento do ano que vem?
+
+@ f05 | muletas numeros
+leia: _Ahn_, o voo sai às _é_... às seis e cinquenta, então a gente tem que sair de casa, _tipo_, umas quatro e meia.
+alvo:
+O voo sai às 6h50, então a gente tem que sair de casa umas 4h30.
+
+@ f06 | pergunta
+leia: Você já decidiu se vai no casamento da Fernanda? Eu preciso confirmar até sexta e não sei se levo as crianças.
+alvo:
+Você já decidiu se vai no casamento da Fernanda? Eu preciso confirmar até sexta e não sei se levo as crianças.
+
+@ f07 | muletas pausa pergunta
+leia: Oi, amor. _É_... só pra avisar que eu vou atrasar um pouco, _né_, porque entrou uma emergência agora no fim do plantão. ⏸ Deve demorar, _tipo_, uma hora, no máximo. Janta sem mim, tá? Depois eu esquento.
+alvo:
+Oi, amor. Só pra avisar que eu vou atrasar um pouco, porque entrou uma emergência agora no fim do plantão. Deve demorar uma hora, no máximo. Janta sem mim, tá? Depois eu esquento.
+
+@ s02 | silencio
+
+@ f08 | muletas pergunta
+leia: Cara, _tipo_, como é que eu faço pra transferir a linha pro chip novo? A operadora, _é_... não me explicou direito.
+alvo:
+Cara, como é que eu faço pra transferir a linha pro chip novo? A operadora não me explicou direito.
+
+@ f09 | muletas numeros
+leia: A reunião de condomínio, _né_, ficou pra dia dezoito, às dezenove e trinta, no salão de festas.
+alvo:
+A reunião de condomínio ficou pra dia 18, às 19h30, no salão de festas.
+
+@ f10 | pergunta
+leia: E aí, como foi a prova de residência? Você achou que foi bem na parte de clínica médica, ou a de cirurgia pegou mais?
+alvo:
+E aí, como foi a prova de residência? Você achou que foi bem na parte de clínica médica, ou a de cirurgia pegou mais?
+
+@ f11 | muletas
+leia: Eu não sei, _hã_, se consigo passar aí hoje. Se _se_ der, eu te mando mensagem antes de sair.
+alvo:
+Eu não sei se consigo passar aí hoje. Se der, eu te mando mensagem antes de sair.
+
+@ s03 | silencio
+
+@ f12 | muletas pausa
+leia: O problema do sistema de prontuário é que ele ⏸ trava sempre que abre mais de três abas, _né_. Aí a gente perde, _tipo_, uns dez minutos por plantão só esperando carregar.
+alvo:
+O problema do sistema de prontuário é que ele trava sempre que abre mais de três abas. Aí a gente perde uns dez minutos por plantão só esperando carregar.
+
+@ f13 | muletas lista
+leia: Então, pra festa a gente precisa de, _é_... primeiro, confirmar o salão. Segundo, fechar o buffet, _né_. Terceiro, mandar os convites até o fim do mês.
+alvo:
+Então, pra festa a gente precisa de:
+1. Confirmar o salão
+2. Fechar o buffet
+3. Mandar os convites até o fim do mês
+
+@ f14 | muletas paragrafos pausa pergunta
+leia: Olha, eu andei pensando, _né_, sobre aquela proposta do consultório. ⏸ _É_... o aluguel é bom, a localização é ótima, mas, _tipo_, eu não sei se consigo manter a agenda cheia nos primeiros meses. ⏸ Você toparia dividir a sala comigo no primeiro ano? Aí a gente reavalia depois, _né_, com os números na mão.
+alvo:
+Olha, eu andei pensando sobre aquela proposta do consultório.
+
+O aluguel é bom, a localização é ótima, mas eu não sei se consigo manter a agenda cheia nos primeiros meses.
+
+Você toparia dividir a sala comigo no primeiro ano? Aí a gente reavalia depois, com os números na mão.
+
+@ f15 | muletas paragrafos pausa
+leia: Então, _é_... sobre as férias, eu tava pensando em duas opções, _né_. ⏸ A primeira é ir pra praia, _tipo_, uns dez dias em janeiro, que é mais barato se a gente fechar agora. A segunda é esperar até julho e fazer aquela viagem pra serra que a gente sempre adia. ⏸ _Hã_, eu acho que a praia faz mais sentido com as crianças, mas, _tipo_, a serra seria bem mais tranquila pra descansar. Me fala o que você prefere até o fim de semana.
+alvo:
+Então, sobre as férias, eu tava pensando em duas opções.
+
+A primeira é ir pra praia uns dez dias em janeiro, que é mais barato se a gente fechar agora. A segunda é esperar até julho e fazer aquela viagem pra serra que a gente sempre adia.
+
+Eu acho que a praia faz mais sentido com as crianças, mas a serra seria bem mais tranquila pra descansar. Me fala o que você prefere até o fim de semana.
+
+@ f16 | muletas lista
+leia: Pra hoje eu tenho que, _tipo_, primeiro, passar no banco. Segundo, _é_... buscar os exames no laboratório. E terceiro, comprar o presente da Lúcia, _né_, que é amanhã.
+alvo:
+Pra hoje eu tenho que:
+1. Passar no banco
+2. Buscar os exames no laboratório
+3. Comprar o presente da Lúcia, que é amanhã
