@@ -51,6 +51,8 @@ jobs:
     timeout-minutes: 20
     env:
       KILO_API_KEY: ${{ secrets.KILO_API_KEY }}
+      # Optional repository variable; kilo-review.sh has a text-model default.
+      KILO_MODEL: ${{ vars.KILO_MODEL }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,7 +64,8 @@ jobs:
         shell: bash
         run: test -n "$KILO_API_KEY" || { echo 'KILO_API_KEY is not configured'; exit 1; }
       - name: Install Kilo Code CLI
-        run: npm install --global @kilocode/cli
+        # Pinned: agent names, flags and KILO_PERMISSION handling were checked against this version.
+        run: npm install --global @kilocode/cli@7.8.1
       - name: Review pull request
         shell: bash
         run: ./.ai-pipeline/kilo-review.sh
