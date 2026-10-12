@@ -37,6 +37,10 @@ ainda não publicou release.
   recorder com o perfil offline, padding de clipe curto, transcrição batch com
   os estágios de texto, OpenCC) e imprime uma linha JSON por fala (texto cru,
   final, cada estágio, tempos) e uma linha de resumo.
+- Métricas da F0a (#14): `scripts/f0a_metrics.py` junta a saída do harness
+  com o manifest pelo `id` e reporta WER/CER normalizado, WER formatado, P/R/F1
+  de `, . ? ! :`, ITN exact-match, preservação (`raw` → `final`) e palavras
+  inseridas nas sondas de silêncio, no total e por faixa de duração.
 
 ### Changed
 
