@@ -3,6 +3,7 @@
 
     handy --manifest m.jsonl --model ID --language pt --vad silero > resultados.jsonl
     python3 scripts/f0a_metrics.py resultados.jsonl --manifest m.jsonl [--ref alvo] [--hyp final] [--json relatorio.json]
+    python3 scripts/f0a_metrics.py candidato.jsonl --manifest m.jsonl --baseline base.jsonl [--samples 2000] [--seed 0]
 
 Cada linha `"type": "utterance"` do harness é juntada pelo `id` com a entrada do
 manifest (o mesmo arquivo passado ao harness, ou outro com os mesmos ids; sem
@@ -27,6 +28,11 @@ Todas as taxas somam as falas (micro) e saem também por faixa de duração do
 - Sondas de silêncio: referência vazia. Ficam fora das taxas acima; conta as
   palavras que a hipótese inseriu.
 
+Com --baseline, compara o candidato com a linha de base (§4): para cada taxa e
+faixa, Δ = candidato − base nas falas avaliadas nas duas execuções, com IC 95%
+por bootstrap pareado (reamostra as falas com reposição; percentis 2,5 e 97,5).
+O F1 de pontuação comparado é o micro de todos os sinais, 2·TP / (2·TP + FP + FN).
+
 Saída: relatório em texto; com --json, também o relatório completo com as
 contagens por fala. Código de saída 2 para entrada inválida.
 """
@@ -36,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import re
 import sys
 import unicodedata
@@ -367,6 +374,119 @@ def build_report(results: Path, manifest: Path, ref_field: str, hyp_field: str) 
 
 
 # ---------------------------------------------------------------------------
+# Comparação com a linha de base
+
+# (key, label, higher is better)
+COMPARED = (
+    ("wer", "WER normalizado", False),
+    ("cer", "CER normalizado", False),
+    ("formatted_wer", "WER formatado", False),
+    ("punctuation_f1", "F1 pontuação", True),
+    ("itn_exact", "ITN exact-match", True),
+)
+
+
+def _counts_vector(row: dict) -> tuple[int, ...]:
+    marks = row["punctuation"].values()
+    return (
+        row["wer_edits"],
+        row["ref_words"],
+        row["cer_edits"],
+        row["ref_chars"],
+        row["formatted_edits"],
+        row["ref_tokens"],
+        sum(counts.get("tp", 0) for counts in marks),
+        sum(counts.get("fp", 0) for counts in marks),
+        sum(counts.get("fn", 0) for counts in marks),
+        row["itn_matched"],
+        row["itn_ref"],
+    )
+
+
+def _metrics_of(vectors: list[tuple[int, ...]]) -> dict[str, float | None]:
+    wer_e, words, cer_e, chars, fmt_e, tokens, tp, fp, fn, itn_m, itn_r = map(sum, zip(*vectors))
+    return {
+        "wer": _rate(wer_e, words),
+        "cer": _rate(cer_e, chars),
+        "formatted_wer": _rate(fmt_e, tokens),
+        "punctuation_f1": _rate(2 * tp, 2 * tp + fp + fn),
+        "itn_exact": _rate(itn_m, itn_r),
+    }
+
+
+def _percentile(sorted_values: list[float], q: float) -> float:
+    position = (len(sorted_values) - 1) * q
+    low = math.floor(position)
+    high = math.ceil(position)
+    return sorted_values[low] + (sorted_values[high] - sorted_values[low]) * (position - low)
+
+
+def _compare_group(base: list[tuple], cand: list[tuple], samples: int, rng: random.Random) -> dict:
+    result: dict = {"utterances": len(base)}
+    if not base:
+        return result
+    base_point, cand_point = _metrics_of(base), _metrics_of(cand)
+    deltas: dict[str, list[float]] = {key: [] for key, _, _ in COMPARED}
+    indices = range(len(base))
+    for _ in range(samples):
+        picked = rng.choices(indices, k=len(base))
+        base_sample = _metrics_of([base[i] for i in picked])
+        cand_sample = _metrics_of([cand[i] for i in picked])
+        for key, values in deltas.items():
+            if base_sample[key] is not None and cand_sample[key] is not None:
+                values.append(cand_sample[key] - base_sample[key])
+    for key, _, higher_is_better in COMPARED:
+        b, c = base_point[key], cand_point[key]
+        values = sorted(deltas[key])
+        ci = [_percentile(values, 0.025), _percentile(values, 0.975)] if values else None
+        verdict = None
+        if ci is not None and (ci[0] > 0 or ci[1] < 0):
+            verdict = "melhor" if (ci[0] > 0) == higher_is_better else "pior"
+        result[key] = {
+            "baseline": b,
+            "candidate": c,
+            "delta": c - b if b is not None and c is not None else None,
+            "ci95": ci,
+            "verdict": verdict,
+        }
+    return result
+
+
+def compare_reports(base: dict, cand: dict, samples: int, seed: int) -> dict:
+    """Paired comparison of two reports over the same manifest (cand − base)."""
+    base_rows = {row["id"]: row for row in base["utterances"]}
+    cand_rows = {row["id"]: row for row in cand["utterances"]}
+    paired = [i for i in base_rows if i in cand_rows]
+    speech = [i for i in paired if not base_rows[i]["silence_probe"]]
+    probes = [i for i in paired if base_rows[i]["silence_probe"]]
+
+    rng = random.Random(seed)
+    groups = {"all": speech, **{name: [i for i in speech if base_rows[i]["band"] == name] for name, _ in BANDS}}
+    return {
+        "baseline": base["inputs"]["results"],
+        "samples": samples,
+        "seed": seed,
+        "paired": len(speech),
+        "only_baseline": sorted(set(base_rows) - set(cand_rows)),
+        "only_candidate": sorted(set(cand_rows) - set(base_rows)),
+        "groups": {
+            name: _compare_group(
+                [_counts_vector(base_rows[i]) for i in ids],
+                [_counts_vector(cand_rows[i]) for i in ids],
+                samples,
+                rng,
+            )
+            for name, ids in groups.items()
+        },
+        "silence": {
+            "probes": len(probes),
+            "baseline_inserted_words": sum(base_rows[i]["inserted_words"] for i in probes),
+            "candidate_inserted_words": sum(cand_rows[i]["inserted_words"] for i in probes),
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Relatório
 
 
@@ -423,6 +543,41 @@ def render(report: dict) -> str:
     return "\n".join(lines)
 
 
+def _pp(value: float | None) -> str:
+    return "—" if value is None else f"{100 * value:+.1f} pp".replace("-", "−")
+
+
+def render_comparison(comparison: dict) -> str:
+    lines = [
+        f"Δ vs linha de base {comparison['baseline']}: {comparison['paired']} falas pareadas "
+        f"({len(comparison['only_baseline'])} só na base, {len(comparison['only_candidate'])} só no candidato); "
+        f"bootstrap pareado, {comparison['samples']} amostras, seed {comparison['seed']}",
+        "",
+        f"{'faixa':9}{'métrica':17}{'base':>9}{'cand.':>9}{'Δ':>11}{'IC 95%':>25}",
+    ]
+    for group, result in comparison["groups"].items():
+        name = "todas" if group == "all" else group
+        if not result["utterances"]:
+            lines.append(f"{name:9}(nenhuma fala)")
+            continue
+        for key, label, _ in COMPARED:
+            row = result[key]
+            ci = "—" if row["ci95"] is None else f"[{_pp(row['ci95'][0])}, {_pp(row['ci95'][1])}]"
+            verdict = row["verdict"] or "≈"
+            lines.append(
+                f"{name:9}{label:17}{_pct(row['baseline']):>9}{_pct(row['candidate']):>9}"
+                f"{_pp(row['delta']):>11}{ci:>25}  {verdict}"
+            )
+            name = ""
+    silence = comparison["silence"]
+    lines += [
+        "",
+        f"sondas de silêncio pareadas: {silence['probes']}; palavras inseridas: "
+        f"base {silence['baseline_inserted_words']}, candidato {silence['candidate_inserted_words']}",
+    ]
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -434,14 +589,25 @@ def main(argv: list[str] | None = None) -> int:
         "--hyp", default="final", choices=("final", "raw"), help="texto avaliado (padrão: final)"
     )
     parser.add_argument("--json", type=Path, help="grava o relatório completo neste arquivo")
+    parser.add_argument(
+        "--baseline", type=Path, help="saída do harness da linha de base, para comparar (Δ e IC 95%%)"
+    )
+    parser.add_argument("--samples", type=int, default=2000, help="amostras do bootstrap (padrão: 2000)")
+    parser.add_argument("--seed", type=int, default=0, help="semente do bootstrap (padrão: 0)")
     args = parser.parse_args(argv)
 
     try:
         report = build_report(args.results, args.manifest, args.ref, args.hyp)
+        if args.baseline:
+            baseline = build_report(args.baseline, args.manifest, args.ref, args.hyp)
+            report["comparison"] = compare_reports(baseline, report, args.samples, args.seed)
     except InputError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
     print(render(report))
+    if "comparison" in report:
+        print()
+        print(render_comparison(report["comparison"]))
     if args.json:
         args.json.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return 0

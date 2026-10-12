@@ -19,6 +19,7 @@ from f0a_metrics import (  # noqa: E402
     InputError,
     align,
     build_report,
+    compare_reports,
     edit_distance,
     itn_spans,
     main,
@@ -125,6 +126,54 @@ class ReportTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()) as stderr:
             self.assertEqual(main([str(results), "--manifest", str(self.manifest)]), 2)
         self.assertIn("zzz", stderr.getvalue())
+
+
+class CompareTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+        ids = ["u1", "u2", "u3", "u4", "u5"]
+        self.manifest = self._jsonl(
+            "m.jsonl", [{"id": i, "audio": f"{i}.wav", "alvo": "um dois três quatro"} for i in ids]
+        )
+        self.base = build_report(
+            self._results("base.jsonl", ids, "um dois cinco seis"), self.manifest, "alvo", "final"
+        )
+        self.cand = build_report(
+            self._results("cand.jsonl", ids[:4], "um dois três quatro"), self.manifest, "alvo", "final"
+        )
+
+    def _jsonl(self, name, rows):
+        path = self.dir / name
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        return path
+
+    def _results(self, name, ids, text):
+        return self._jsonl(
+            name,
+            [{"type": "utterance", "id": i, "audio_secs": 3.0, "raw": text, "final": text} for i in ids],
+        )
+
+    def test_identical_runs_have_a_zero_delta_and_no_verdict(self):
+        wer = compare_reports(self.base, self.base, samples=200, seed=1)["groups"]["all"]["wer"]
+        self.assertEqual(wer["delta"], 0)
+        self.assertEqual(wer["ci95"], [0, 0])
+        self.assertIsNone(wer["verdict"])
+
+    def test_only_paired_utterances_count_and_a_consistent_gain_is_significant(self):
+        comparison = compare_reports(self.base, self.cand, samples=200, seed=1)
+
+        self.assertEqual(comparison["paired"], 4)
+        self.assertEqual(comparison["only_baseline"], ["u5"])
+        wer = comparison["groups"]["all"]["wer"]
+        self.assertEqual((wer["baseline"], wer["candidate"], wer["delta"]), (0.5, 0.0, -0.5))
+        self.assertEqual(wer["ci95"], [-0.5, -0.5])
+        self.assertEqual(wer["verdict"], "melhor")
+        self.assertEqual(comparison["groups"]["≤ 10 s"]["utterances"], 4)
+        self.assertEqual(comparison["groups"]["> 30 s"], {"utterances": 0})
+        # No punctuation marks in either run: F1 is undefined, never a verdict.
+        self.assertIsNone(comparison["groups"]["all"]["punctuation_f1"]["verdict"])
 
 
 if __name__ == "__main__":

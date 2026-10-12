@@ -3,6 +3,16 @@
 
     python3 scripts/corpus_f0b.py build    # fonte/*.txt -> manifest.jsonl, blocos/*.md, leitura.html
     python3 scripts/corpus_f0b.py status   # quais falas já foram gravadas no Handy
+    python3 scripts/corpus_f0b.py export   # manifest com o .wav de cada fala gravada, para o harness
+
+`export` escreve, fora do git (padrão ~/handy-f0a/corpus-f0b.jsonl), cada linha
+do manifest.jsonl com `audio` (caminho absoluto do .wav no histórico do Handy),
+`gravado_em` e `texto_app` (o que o app transcreveu na hora). Cada fala usa a
+gravação mais recente cujo .wav ainda existe. Sondas de silêncio são gravações
+com menos de 4 palavras: cada uma vai para o bloco da fala gravada mais próxima
+no tempo (até --probe-window minutos) e, por bloco, as mais recentes preenchem
+as sondas em ordem cronológica. O arquivo serve tanto ao harness quanto ao
+scripts/f0a_metrics.py (--manifest).
 
 A fonte de verdade são os arquivos docs/corpus-f0b/fonte/bNN.txt. Formato:
 
@@ -202,33 +212,89 @@ def normalize(text: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9 ]+", " ", text).split())
 
 
-def cmd_status(args) -> None:
-    db = Path(args.db).expanduser()
+def read_history(db: Path) -> list[tuple[int, str, str]]:
     if not db.exists():
         raise SystemExit(f"histórico do Handy não encontrado em {db}")
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    rows = conn.execute(
-        "SELECT timestamp, file_name, transcription_text FROM transcription_history ORDER BY timestamp"
-    ).fetchall()
-    falas = [f for b in load() for f in b["falas"] if "silencio" not in f["tags"]]
-    targets = [(f, normalize(spoken_text(f["leia"])), normalize(f["alvo"])) for f in falas]
-    rec_dir = db.parent / "recordings"
-    takes: dict[str, list] = {}
-    short = 0
+    try:
+        return conn.execute(
+            "SELECT timestamp, file_name, transcription_text FROM transcription_history ORDER BY timestamp"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def match_takes(rows: list[tuple[int, str, str]], falas: list[dict], min_ratio: float) -> tuple[dict, list]:
+    """Cada gravação com 4+ palavras vai para a fala que ela lê (maior semelhança
+    com o texto falado ou o alvo, se ≥ min_ratio). As curtas voltam à parte:
+    são as candidatas a sonda de silêncio."""
+    targets = [
+        (f, normalize(spoken_text(f["leia"])), normalize(f["alvo"])) for f in falas if "silencio" not in f["tags"]
+    ]
+    takes: dict[str, list[tuple[int, str]]] = {}
+    short = []
     for ts, file_name, text in rows:
-        norm = normalize(text or "")
-        if len((text or "").split()) < 4:
-            short += 1
+        text = text or ""
+        if len(text.split()) < 4:
+            short.append((ts, file_name, text))
             continue
+        norm = normalize(text)
         best, score = None, 0.0
         for f, spoken, alvo in targets:
             s = max(difflib.SequenceMatcher(None, norm, spoken).ratio(), difflib.SequenceMatcher(None, norm, alvo).ratio())
             if s > score:
                 best, score = f, s
-        if best and score >= args.min_ratio:
-            takes.setdefault(best["id"], []).append((ts, file_name, (rec_dir / file_name).exists()))
+        if best and score >= min_ratio:
+            takes.setdefault(best["id"], []).append((ts, file_name))
+    return takes, short
+
+
+def assign_probes(probes: list[dict], takes: dict, short: list, window_s: int) -> tuple[dict, int]:
+    """Sonda → gravação curta: cada curta vai para o bloco da fala gravada mais
+    próxima no tempo (até window_s); por bloco, as mais recentes preenchem as
+    sondas em ordem cronológica. Devolve também quantas curtas sobraram."""
+    take_times = [(ts, fid.split("-")[0]) for fid, recs in takes.items() for ts, _ in recs]
+    by_block: dict[str, list] = {}
+    for rec in short:
+        nearest = min(take_times, key=lambda t: abs(t[0] - rec[0]), default=None)
+        if nearest and abs(nearest[0] - rec[0]) <= window_s:
+            by_block.setdefault(nearest[1], []).append(rec)
+    assigned = {}
+    for block, recs in by_block.items():
+        ids = sorted(p["id"] for p in probes if p["bloco"] == block)
+        chosen = sorted(recs)[-len(ids):] if ids else []
+        assigned.update(zip(ids, chosen))
+    return assigned, len(short) - len(assigned)
+
+
+def export_rows(rows: list, manifest: list[dict], rec_dir: Path, min_ratio: float, window_s: int) -> tuple[list, dict]:
+    takes, short = match_takes(rows, manifest, min_ratio)
+    probes = [r for r in manifest if "silencio" in r["tags"]]
+    probe_recs, unassigned = assign_probes(probes, takes, short, window_s)
+    texts = {file_name: text or "" for _, file_name, text in rows}
+    out, missing, lost = [], [], []
+    for row in manifest:
+        if "silencio" in row["tags"]:
+            candidates = [probe_recs[row["id"]][:2]] if row["id"] in probe_recs else []
+        else:
+            candidates = takes.get(row["id"], [])
+        existing = [(ts, name) for ts, name in candidates if (rec_dir / name).exists()]
+        if not existing:
+            (lost if candidates else missing).append(row["id"])
+            continue
+        ts, name = max(existing)
+        out.append({**row, "audio": str((rec_dir / name).resolve()), "gravado_em": ts, "texto_app": texts[name]})
+    return out, {"missing": missing, "lost": lost, "unassigned_short": unassigned}
+
+
+def cmd_status(args) -> None:
+    db = Path(args.db).expanduser()
+    rows = read_history(db)
+    falas = [f for b in load() for f in b["falas"] if "silencio" not in f["tags"]]
+    rec_dir = db.parent / "recordings"
+    takes, short = match_takes(rows, falas, args.min_ratio)
     done = [f for f in falas if f["id"] in takes]
-    print(f"{len(done)}/{len(falas)} falas com gravação; {short} gravações curtas (prováveis sondas de silêncio)")
+    print(f"{len(done)}/{len(falas)} falas com gravação; {len(short)} gravações curtas (prováveis sondas de silêncio)")
     by_block: dict[str, list] = {}
     for f in falas:
         by_block.setdefault(f["bloco"], []).append(f)
@@ -236,9 +302,31 @@ def cmd_status(args) -> None:
         got = [f for f in items if f["id"] in takes]
         missing = [f["id"].split("-")[1] for f in items if f["id"] not in takes]
         print(f"  {block_id}: {len(got)}/{len(items)}" + (f"  faltam: {' '.join(missing)}" if missing else "  completo"))
-    lost = [fid for fid, t in takes.items() if not any(exists for *_, exists in t)]
+    lost = [fid for fid, recs in takes.items() if not any((rec_dir / name).exists() for _, name in recs)]
     if lost:
         print(f"ATENÇÃO: {len(lost)} falas estão no histórico mas o .wav foi apagado (retenção do Handy): {' '.join(lost)}")
+
+
+def cmd_export(args) -> None:
+    db = Path(args.db).expanduser()
+    manifest = [json.loads(line) for line in (CORPUS / "manifest.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    out, report = export_rows(read_history(db), manifest, db.parent / "recordings", args.min_ratio, args.probe_window * 60)
+    dest = Path(args.out).expanduser()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with dest.open("w", encoding="utf-8") as fh:
+        for row in out:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    probes = sum("silencio" in r["tags"] for r in manifest)
+    got_probes = sum("silencio" in r["tags"] for r in out)
+    print(
+        f"{len(out) - got_probes}/{len(manifest) - probes} falas e {got_probes}/{probes} sondas de silêncio exportadas para {dest}"
+    )
+    if report["missing"]:
+        print(f"  sem gravação: {' '.join(report['missing'])}")
+    if report["lost"]:
+        print(f"  ATENÇÃO, .wav apagado (retenção do Handy): {' '.join(report['lost'])}")
+    if report["unassigned_short"]:
+        print(f"  {report['unassigned_short']} gravações curtas fora das sondas (longe de qualquer bloco ou excedentes)")
 
 
 def main() -> None:
@@ -249,6 +337,12 @@ def main() -> None:
     status.add_argument("--db", default=str(HANDY_DB))
     status.add_argument("--min-ratio", type=float, default=0.55)
     status.set_defaults(func=cmd_status)
+    export = sub.add_parser("export")
+    export.add_argument("--db", default=str(HANDY_DB))
+    export.add_argument("--min-ratio", type=float, default=0.55)
+    export.add_argument("--probe-window", type=int, default=10, help="minutos entre sonda e fala do bloco (padrão: 10)")
+    export.add_argument("--out", default=str(Path.home() / "handy-f0a" / "corpus-f0b.jsonl"))
+    export.set_defaults(func=cmd_export)
     args = parser.parse_args()
     args.func(args)
 
