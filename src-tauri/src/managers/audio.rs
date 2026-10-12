@@ -232,6 +232,17 @@ fn restore_mute(prev_muted: Option<bool>) {
 
 const WHISPER_SAMPLE_RATE: usize = 16000;
 
+/// Zero-pad a recording shorter than one second to 1.25 s before it is
+/// transcribed; an empty recording stays empty. Shared by `stop_recording` and
+/// the `--manifest` harness.
+pub(crate) fn pad_short_recording(mut samples: Vec<f32>) -> Vec<f32> {
+    let len = samples.len();
+    if len < WHISPER_SAMPLE_RATE && len > 0 {
+        samples.resize(WHISPER_SAMPLE_RATE * 5 / 4, 0.0);
+    }
+    samples
+}
+
 /* ──────────────────────────────────────────────────────────────── */
 
 #[derive(Clone, Debug)]
@@ -277,12 +288,14 @@ struct MicrophoneResolution {
 
 /* ──────────────────────────────────────────────────────────────── */
 
-fn create_audio_recorder(
+/// The VAD a recording uses for `backend`: the detector wrapped in the
+/// time-based smoothing profile, plus its offline and streaming hangover tails
+/// in detector frames. Shared by the recorder and the `--manifest` harness so
+/// both filter audio identically.
+pub(crate) fn build_smoothed_vad(
     backend: VadBackend,
     app_handle: &tauri::AppHandle,
-    selected_channel: Option<u16>,
-    stream_router: Arc<StreamRouter>,
-) -> Result<AudioRecorder, anyhow::Error> {
+) -> Result<(SmoothedVad, usize, usize), anyhow::Error> {
     let detector: Box<dyn VoiceActivityDetector> = match backend {
         VadBackend::Silero => {
             let vad_path = app_handle
@@ -323,6 +336,22 @@ fn create_audio_recorder(
         "Initialized {:?} VAD backend ({} samples/frame)",
         backend, frame_samples
     );
+
+    Ok((
+        smoothed_vad,
+        offline_hangover_frames,
+        streaming_hangover_frames,
+    ))
+}
+
+fn create_audio_recorder(
+    backend: VadBackend,
+    app_handle: &tauri::AppHandle,
+    selected_channel: Option<u16>,
+    stream_router: Arc<StreamRouter>,
+) -> Result<AudioRecorder, anyhow::Error> {
+    let (smoothed_vad, offline_hangover_frames, streaming_hangover_frames) =
+        build_smoothed_vad(backend, app_handle)?;
 
     // Recorder with VAD, a spectrum-level callback that forwards level updates to
     // the frontend, and an audio-frame callback that feeds live streaming via a
@@ -1055,16 +1084,7 @@ impl AudioRecordingManager {
                     return None;
                 }
 
-                // Pad if very short
-                let s_len = samples.len();
-                // debug!("Got {} samples", s_len);
-                if s_len < WHISPER_SAMPLE_RATE && s_len > 0 {
-                    let mut padded = samples;
-                    padded.resize(WHISPER_SAMPLE_RATE * 5 / 4, 0.0);
-                    Some(padded)
-                } else {
-                    Some(samples)
-                }
+                Some(pad_short_recording(samples))
             }
             _ => None,
         }

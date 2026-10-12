@@ -385,7 +385,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
     }
 }
 
-async fn maybe_convert_chinese_variant(
+pub(crate) async fn maybe_convert_chinese_variant(
     effective_language: &str,
     transcription: &str,
 ) -> Option<String> {
