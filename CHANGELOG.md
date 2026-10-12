@@ -46,6 +46,10 @@ ainda não publicou release.
   `scripts/corpus_f0b.py export` gera o manifest do corpus F0b a partir do
   histórico do Handy; `scripts/f0a_metrics.py --baseline` compara duas
   execuções com IC 95% por bootstrap pareado.
+- Trace de latência por gravação (F0a, #16): uma linha `Latency trace` no log
+  do app por sessão, com press→1º frame, →1ª fala no VAD, →1º feed do engine,
+  →1º texto ao vivo e release→texto final, →colar, mais modelo, caminho ao vivo
+  e desfecho. Só medição, para diagnosticar a demora da 1ª palavra (issue #4).
 
 ### Changed
 
