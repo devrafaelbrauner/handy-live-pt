@@ -34,13 +34,14 @@ pub struct CliArgs {
     #[arg(short = 'f', long, value_name = "WAV")]
     pub transcribe_file: Option<PathBuf>,
 
-    /// Model id to load for --transcribe-file (default: the selected model).
+    /// Model id to load for --transcribe-file / --manifest (default: the
+    /// selected model).
     #[arg(long)]
     pub model: Option<String>,
 
-    /// Hard-select the compute device for --transcribe-file by its registry
-    /// index (see --list-devices). Omit to use the persisted accelerator
-    /// setting. transcribe-cpp (whisper-family) models only.
+    /// Hard-select the compute device for --transcribe-file / --manifest by its
+    /// registry index (see --list-devices). Omit to use the persisted
+    /// accelerator setting. transcribe-cpp (whisper-family) models only.
     #[arg(long, value_name = "N")]
     pub device_index: Option<usize>,
 
@@ -60,4 +61,32 @@ pub struct CliArgs {
     /// Emit --transcribe-file results as JSON.
     #[arg(long)]
     pub json: bool,
+
+    /// Evaluation harness: transcribe every WAV (16 kHz mono 16-bit) listed in
+    /// this JSONL manifest headlessly and exit. One object per line with
+    /// "audio" (a path, relative to the manifest) and an optional unique "id"
+    /// (default: the audio path); other fields are ignored. Prints one JSON
+    /// line per utterance (raw and final text, each post-ASR text stage,
+    /// timings) and a final summary line.
+    #[arg(long, value_name = "JSONL", conflicts_with_all = ["transcribe_file", "repeat"])]
+    pub manifest: Option<PathBuf>,
+
+    /// Language intent for --manifest (e.g. "pt", "auto") in place of the
+    /// selected language; coerced to the model's languages as in the app.
+    #[arg(long, value_name = "CODE", requires = "manifest")]
+    pub language: Option<String>,
+
+    /// Voice activity detection for --manifest. "off" (default) sends the whole
+    /// clip, as --transcribe-file does; "silero" / "earshot" first filter it
+    /// through the recorder's VAD with the offline profile, as a recording is.
+    #[arg(long, value_enum, requires = "manifest")]
+    pub vad: Option<VadMode>,
+}
+
+/// `--vad` choices for the --manifest harness.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VadMode {
+    Off,
+    Silero,
+    Earshot,
 }

@@ -1623,6 +1623,29 @@ impl TranscriptionManager {
     }
 
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
+        self.transcribe_with(audio, None, None)
+    }
+
+    /// The batch path [`Self::transcribe`] runs, with `settings` in place of the
+    /// persisted ones, recording the raw engine text, the language the model ran
+    /// in and every post-ASR text stage. Used by the `--manifest` harness.
+    pub fn transcribe_detailed(
+        &self,
+        audio: Vec<f32>,
+        settings: &AppSettings,
+    ) -> Result<TranscriptionDetail> {
+        let mut detail = TranscriptionDetail::default();
+        let final_text = self.transcribe_with(audio, Some(settings), Some(&mut detail))?;
+        detail.final_text = final_text;
+        Ok(detail)
+    }
+
+    fn transcribe_with(
+        &self,
+        audio: Vec<f32>,
+        settings_override: Option<&AppSettings>,
+        mut detail: Option<&mut TranscriptionDetail>,
+    ) -> Result<String> {
         #[cfg(debug_assertions)]
         if std::env::var("HANDY_FORCE_TRANSCRIPTION_FAILURE").is_ok() {
             return Err(anyhow::anyhow!(
@@ -1660,7 +1683,10 @@ impl TranscriptionManager {
         }
 
         // Get current settings for configuration
-        let settings = get_settings(&self.app_handle);
+        let settings = match settings_override {
+            Some(settings) => settings.clone(),
+            None => get_settings(&self.app_handle),
+        };
 
         // Validate selected language against the model's supported languages.
         // If the language isn't supported, fall back to "auto" to prevent errors.
@@ -1682,6 +1708,9 @@ impl TranscriptionManager {
                 "Language intent '{}' resolved to '{}' for model '{}'",
                 settings.selected_language, validated_language, active_model
             );
+        }
+        if let Some(detail) = detail.as_deref_mut() {
+            detail.language = validated_language.clone();
         }
 
         // Whether the loaded transcribe-cpp model advertises
@@ -1939,12 +1968,16 @@ impl TranscriptionManager {
         // family). We don't pass a prompt to non-whisper models (it requires the
         // whisper-kind run extension), so they still get fuzzy correction here,
         // same as the ONNX engines.
-        let filtered_result = post_process_transcription_text(
+        if let Some(detail) = detail.as_deref_mut() {
+            detail.raw = result.clone();
+        }
+        let filtered_result = post_process_transcription_text_traced(
             result,
             &settings,
             model_is_whisper,
             &output_language,
             &model_languages,
+            detail.map(|detail| &mut detail.stages),
         );
 
         let et = std::time::Instant::now();
@@ -1979,6 +2012,28 @@ impl TranscriptionManager {
 
         Ok(final_result)
     }
+}
+
+/// One post-ASR text stage that ran, with its output.
+#[derive(Clone, Debug, Serialize)]
+pub struct TextStage {
+    pub name: &'static str,
+    pub text: String,
+}
+
+/// Everything one batch transcription produced, stage by stage (see
+/// [`TranscriptionManager::transcribe_detailed`]).
+#[derive(Clone, Debug, Default)]
+pub struct TranscriptionDetail {
+    /// Text exactly as the engine returned it.
+    pub raw: String,
+    /// The language the model ran in: the language intent coerced to the
+    /// loaded model's capabilities (`auto` means detection).
+    pub language: String,
+    /// Post-ASR stages that ran, in order; the last one's text is `final_text`.
+    pub stages: Vec<TextStage>,
+    /// What `transcribe` returns for the same audio and settings.
+    pub final_text: String,
 }
 
 struct StreamPerf {
@@ -2219,13 +2274,47 @@ fn post_process_transcription_text(
     output_language: &OutputLanguageEvidence,
     supported_languages: &[String],
 ) -> String {
-    fail_open_text_transform(raw, |raw| {
+    post_process_transcription_text_traced(
+        raw,
+        settings,
+        custom_words_already_prompted,
+        output_language,
+        supported_languages,
+        None,
+    )
+}
+
+/// [`post_process_transcription_text`], appending each stage that ran and its
+/// output to `trace` (in order; the last entry is the returned text). If a stage
+/// panics, the raw text is returned and `trace` keeps no partial entries.
+fn post_process_transcription_text_traced(
+    raw: String,
+    settings: &AppSettings,
+    custom_words_already_prompted: bool,
+    output_language: &OutputLanguageEvidence,
+    supported_languages: &[String],
+    mut trace: Option<&mut Vec<TextStage>>,
+) -> String {
+    let trace_start = trace.as_ref().map_or(0, |trace| trace.len());
+    let mut completed = false;
+    let text = fail_open_text_transform(raw, |raw| {
+        let mut record = |name: &'static str, text: &str| {
+            if let Some(trace) = trace.as_deref_mut() {
+                trace.push(TextStage {
+                    name,
+                    text: text.to_owned(),
+                });
+            }
+        };
+
         let corrected = if !settings.custom_words.is_empty() && !custom_words_already_prompted {
-            apply_custom_words(
+            let corrected = apply_custom_words(
                 &raw,
                 &settings.custom_words,
                 settings.word_correction_threshold,
-            )
+            );
+            record("custom_words", &corrected);
+            corrected
         } else {
             raw
         };
@@ -2255,9 +2344,21 @@ fn post_process_transcription_text(
             &settings.custom_filler_words,
             settings.filler_word_removal_enabled,
         );
+        if settings.filler_word_removal_enabled {
+            record("filler_words", &without_fillers);
+        }
 
-        normalize_transcription_output(&without_fillers)
-    })
+        let normalized = normalize_transcription_output(&without_fillers);
+        record("normalize", &normalized);
+        completed = true;
+        normalized
+    });
+    if !completed {
+        if let Some(trace) = trace {
+            trace.truncate(trace_start);
+        }
+    }
+    text
 }
 
 /// Optional text cleanup must never discard a successful model result. The
@@ -2855,6 +2956,48 @@ mod tests {
             OutputLanguageEvidence::UserSelected("pt".to_string())
         );
         assert_eq!(result, "eu vi um carro");
+    }
+
+    #[test]
+    fn traced_post_processing_records_the_stages_that_ran_ending_at_the_result() {
+        let settings = AppSettings {
+            custom_words: vec!["Handy".to_string()],
+            filler_word_removal_enabled: true,
+            custom_filler_words: Some(vec!["uh".to_string()]),
+            ..Default::default()
+        };
+        let supported = languages(&["en"]);
+        let evidence = OutputLanguageEvidence::UserSelected("en".to_string());
+        let raw = "uh handy  works works works".to_string();
+
+        for (already_prompted, expected_stages) in [
+            (false, &["custom_words", "filler_words", "normalize"][..]),
+            (true, &["filler_words", "normalize"][..]),
+        ] {
+            let mut trace = Vec::new();
+            let traced = post_process_transcription_text_traced(
+                raw.clone(),
+                &settings,
+                already_prompted,
+                &evidence,
+                &supported,
+                Some(&mut trace),
+            );
+
+            let names: Vec<&str> = trace.iter().map(|stage| stage.name).collect();
+            assert_eq!(names, expected_stages);
+            assert_eq!(trace.last().unwrap().text, traced);
+            assert_eq!(
+                traced,
+                post_process_transcription_text(
+                    raw.clone(),
+                    &settings,
+                    already_prompted,
+                    &evidence,
+                    &supported,
+                )
+            );
+        }
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use super::{
     is_microphone_access_denied, is_no_input_device_error, run_consumer, AudioRecorder,
-    CaptureProcessor, CaptureTransportState, ChunkDisposition, Cmd, SegmentSink, VadConfig,
-    VadPolicy,
+    CaptureProcessor, CaptureTransportState, ChunkDisposition, Cmd, OfflineVad, SegmentSink,
+    VadConfig, VadPolicy,
 };
 use crate::audio_toolkit::vad::{VadFrame, VoiceActivityDetector};
 use rtrb::RingBuffer;
@@ -581,4 +581,48 @@ fn detects_coreaudio_config_error() {
 fn does_not_match_other_errors_for_no_device() {
     assert!(!is_no_input_device_error("permission denied"));
     assert!(!is_no_input_device_error("device not found"));
+}
+
+/// `n` consecutive 30 ms frames whose samples equal `first`, `first + 1`, …
+fn numbered_frames(first: usize, n: usize) -> Vec<f32> {
+    (first..first + n)
+        .flat_map(|value| [value as f32; SEG_FRAME])
+        .collect()
+}
+
+#[test]
+fn offline_vad_keeps_only_speech_and_starts_each_clip_fresh() {
+    let detector = ScriptedFrameVad {
+        script: "SNSNSN".chars().collect(),
+        frame_samples: SEG_FRAME,
+    };
+    let mut vad = OfflineVad::new(Box::new(detector), 0);
+
+    let first = vad.filter(&numbered_frames(1, 3));
+    let second = vad.filter(&numbered_frames(4, 3));
+
+    let mut expected_first = numbered_frames(1, 1);
+    expected_first.extend(numbered_frames(3, 1));
+    assert_eq!(first, expected_first);
+    assert_eq!(second, numbered_frames(5, 1));
+}
+
+#[test]
+fn offline_vad_turns_a_silent_clip_into_no_audio_with_the_recording_profile() {
+    use crate::audio_toolkit::vad::{
+        frames_for_duration_ms, EarshotVad, SmoothedVad, VAD_OFFLINE_HANGOVER_MS, VAD_ONSET_MS,
+        VAD_PREFILL_MS,
+    };
+    let earshot = EarshotVad::new(0.5).expect("earshot");
+    let frame_samples = earshot.frame_samples();
+    let hangover = frames_for_duration_ms(VAD_OFFLINE_HANGOVER_MS, frame_samples);
+    let smoothed = SmoothedVad::new(
+        Box::new(earshot),
+        frames_for_duration_ms(VAD_PREFILL_MS, frame_samples),
+        hangover,
+        frames_for_duration_ms(VAD_ONSET_MS, frame_samples),
+    );
+    let mut vad = OfflineVad::new(Box::new(smoothed), hangover);
+
+    assert!(vad.filter(&vec![0.0; 2 * 16_000]).is_empty());
 }

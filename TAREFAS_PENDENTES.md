@@ -3,27 +3,20 @@
 Backlog do que falta fazer. Prioridades: **alta**, **média**, **baixa**.
 Itens concluídos são movidos para a seção _Concluídas_ (mantendo o histórico).
 
-Roadmap do motor pt-BR: `docs/ULTRAPLAN.md` (ULTRAPLAN v2, 2026-09-26), por
-enquanto só no branch `feat/corpus-f0b` (PR #8). As fases e prioridades abaixo
-seguem o §3 (fases) e o §6 (decisões de 2026-09-27) do plano.
+Roadmap do motor pt-BR: `docs/ULTRAPLAN.md` (ULTRAPLAN v2, 2026-09-26). As
+fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
+2026-09-27) do plano.
 
 ## A fazer
 
 ### Entrega e CI (alta)
 
-- [ ] PR #12 (rascunho): remove a aprovação humana do pipeline (CI →
-      `Pipeline complete`). Fazer merge.
-- [ ] PR #8 (rascunho): corpus F0b + `docs/ULTRAPLAN.md`. Depois do merge do
-      #12, atualizar o branch com o `main` e fazer merge.
 - [ ] PR #1 (rascunho do Copilot, atrás do `main`): outra abordagem para
       builds sem credenciais de assinatura, problema já resolvido no `main`
       pelo #6/#7. Decidir se fecha.
 
 ### F0a — Harness mínimo (alta)
 
-- [ ] CLI `--manifest m.jsonl`, `--language`, `--vad {off,silero,earshot}`
-      (mesmo código de VAD do app); saída JSON por fala com texto cru, final,
-      trace por estágio e tempos.
 - [ ] Métricas: WER/CER normalizado e formatado; P/R/F1 por `, . ? ! :`; ITN
       exact-match; preservação de palavras.
 - [ ] Trace de latência no app (tecla → 1º quadro → 1ª fala no VAD → 1º feed →
@@ -144,3 +137,8 @@ seguem o §3 (fases) e o §6 (decisões de 2026-09-27) do plano.
 - [x] 2026-09-27 — ULTRAPLAN v2 com as 6 decisões respondidas (PR #8).
 - [x] 2026-10-12 — Gate de revisão Kilo removido (#11, `eb9bcd2`): o projeto
       não usa mais o KiloCode. PR #9 fechado e secret `KILO_API_KEY` apagado.
+- [x] 2026-10-12 — Aprovação humana removida do pipeline (#12); ULTRAPLAN +
+      corpus F0b (#8) e arquivos de acompanhamento (#10) no `main`.
+- [x] 2026-10-12 — F0a: CLI do harness `--manifest`, `--language` e
+      `--vad {off,silero,earshot}` com o VAD do app e saída JSON por fala
+      (#13).

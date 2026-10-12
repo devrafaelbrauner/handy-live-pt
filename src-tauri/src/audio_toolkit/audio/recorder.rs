@@ -1035,6 +1035,49 @@ impl CaptureProcessor {
     }
 }
 
+/// Filters already-captured 16 kHz mono audio through the recorder's own
+/// framing and VAD loop (`CaptureProcessor` + `handle_frame`), so an offline
+/// clip reaches the transcriber exactly as a live recording with the offline
+/// VAD profile would. One instance can filter many clips: each call starts a
+/// fresh recording and resets the detector.
+pub struct OfflineVad {
+    processor: CaptureProcessor,
+}
+
+impl OfflineVad {
+    /// `detector` is the full detector a recording uses (for the app, the
+    /// backend wrapped in `SmoothedVad`); `hangover_frames` is its offline
+    /// post-speech tail in detector frames.
+    pub fn new(detector: Box<dyn VoiceActivityDetector>, hangover_frames: usize) -> Self {
+        let frame_samples = detector.frame_samples();
+        let config = VadConfig {
+            detector: Arc::new(Mutex::new(detector)),
+            frame_samples,
+            offline_hangover_frames: hangover_frames,
+            streaming_hangover_frames: hangover_frames,
+        };
+        Self {
+            processor: CaptureProcessor::new(
+                constants::WHISPER_SAMPLE_RATE,
+                Some(config),
+                None,
+                None,
+                Instant::now(),
+            ),
+        }
+    }
+
+    /// The speech-only samples the recorder would hand to the transcriber for
+    /// `samples` (16 kHz mono). Silence-only input yields an empty buffer.
+    pub fn filter(&mut self, samples: &[f32]) -> Vec<f32> {
+        let (ready_tx, _ready_rx) = mpsc::channel();
+        self.processor.begin_recording(VadPolicy::Offline, ready_tx);
+        self.processor
+            .process_raw_chunk(samples, ChunkDisposition::Capture);
+        self.processor.finish_recording()
+    }
+}
+
 fn run_consumer(
     mut processor: CaptureProcessor,
     mut sample_consumer: Consumer<f32>,
