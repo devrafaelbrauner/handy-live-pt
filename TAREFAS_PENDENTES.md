@@ -11,12 +11,8 @@ seguem o §3 (fases) e o §6 (decisões de 2026-09-27) do plano.
 
 ### Entrega e CI (alta)
 
-- [ ] PR #11 (rascunho): remove o gate de revisão Kilo, porque o projeto não
-      usa mais o KiloCode. Aprovar e fazer merge.
-- [ ] Depois do #11: fechar o PR #9 (gate Kilo determinístico, obsoleto) e
-      apagar o secret `KILO_API_KEY` do repositório.
-- [ ] PR #8 (rascunho): corpus F0b + `docs/ULTRAPLAN.md`. Depois do merge do
-      #11, atualizar o branch com o `main` para o pipeline rodar sem o Kilo.
+- [ ] PR #8 (rascunho): corpus F0b + `docs/ULTRAPLAN.md`. Atualizar o branch
+      com o `main`, que já não tem o gate Kilo, e aprovar.
 - [ ] PR #1 (rascunho do Copilot, atrás do `main`): outra abordagem para
       builds sem credenciais de assinatura, problema já resolvido no `main`
       pelo #6/#7. Decidir se fecha.
@@ -144,3 +140,5 @@ seguem o §3 (fases) e o §6 (decisões de 2026-09-27) do plano.
 - [x] 2026-09-26 — "Main Branch Build" sem assinatura e dylibs carregando no
       macOS sem assinatura (#6, #7).
 - [x] 2026-09-27 — ULTRAPLAN v2 com as 6 decisões respondidas (PR #8).
+- [x] 2026-10-12 — Gate de revisão Kilo removido (#11, `eb9bcd2`): o projeto
+      não usa mais o KiloCode. PR #9 fechado e secret `KILO_API_KEY` apagado.
