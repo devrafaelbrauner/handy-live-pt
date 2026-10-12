@@ -11,11 +11,12 @@ seguem o §3 (fases) e o §6 (decisões de 2026-09-27) do plano.
 
 ### Entrega e CI (alta)
 
-- [ ] PR #9 (rascunho): gate de revisão Kilo determinístico (`KILO_MODEL`
-      fixo, CLI `@kilocode/cli@7.8.1`, revisor só-leitura). Falta a validação
-      real com a chave da API, que é a execução do pipeline no próprio PR.
-- [ ] PR #8 (rascunho): corpus F0b + `docs/ULTRAPLAN.md`. A revisão Kilo
-      falhou duas vezes nele; reexecutar depois do merge do #9.
+- [ ] PR #11 (rascunho): remove o gate de revisão Kilo, porque o projeto não
+      usa mais o KiloCode. Aprovar e fazer merge.
+- [ ] Depois do #11: fechar o PR #9 (gate Kilo determinístico, obsoleto) e
+      apagar o secret `KILO_API_KEY` do repositório.
+- [ ] PR #8 (rascunho): corpus F0b + `docs/ULTRAPLAN.md`. Depois do merge do
+      #11, atualizar o branch com o `main` para o pipeline rodar sem o Kilo.
 - [ ] PR #1 (rascunho do Copilot, atrás do `main`): outra abordagem para
       builds sem credenciais de assinatura, problema já resolvido no `main`
       pelo #6/#7. Decidir se fecha.
