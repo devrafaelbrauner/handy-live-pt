@@ -1,3 +1,4 @@
+use crate::latency_trace::{self, Outcome};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::shortcut;
@@ -85,6 +86,11 @@ fn native_windows_machine() -> Option<u16> {
 /// Handles cancelling both recording and transcription operations and updates UI state.
 pub fn cancel_current_operation(app: &AppHandle) {
     info!("Initiating operation cancellation...");
+
+    // End the latency trace before anything signals the cancel, so the stop
+    // task cannot report the session first with a different outcome. No-op
+    // when no recording session is in progress.
+    latency_trace::finish(Outcome::Cancelled);
 
     // Unregister the cancel shortcut asynchronously
     shortcut::unregister_cancel_shortcut(app);
