@@ -1,0 +1,234 @@
+<title>Corpus de Ditado F0b</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,400;7..72,600&family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --bg: #f5f7fa; --panel: #ffffff; --ink: #1c2433; --muted: #5d6778; --line: #dde2ea;
+  --accent: #1d6b86; --accent-soft: #e3f0f4;
+  --cmd: #8a4a06; --cmd-bg: #fbeedb; --fill: #6b4f98; --pause: #5d6778;
+  --ok: #2f7d4f; --ok-bg: #e2f2e8;
+  --serif: "Literata", Georgia, serif; --sans: "Figtree", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #11151c; --panel: #181e27; --ink: #e5e9f0; --muted: #98a2b3; --line: #2a3240;
+    --accent: #5fb4d0; --accent-soft: #1b2e37; --cmd: #f2b25c; --cmd-bg: #3a2a14; --fill: #b9a0e3; --pause: #98a2b3;
+    --ok: #6fcf97; --ok-bg: #173325;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #11151c; --panel: #181e27; --ink: #e5e9f0; --muted: #98a2b3; --line: #2a3240;
+  --accent: #5fb4d0; --accent-soft: #1b2e37; --cmd: #f2b25c; --cmd-bg: #3a2a14; --fill: #b9a0e3; --pause: #98a2b3;
+  --ok: #6fcf97; --ok-bg: #173325;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); padding-inline: 16px; padding-block: 20px 40px; }
+.wrap { max-width: 1080px; margin: 0 auto; display: grid; grid-template-columns: 240px 1fr; gap: 24px; align-items: start; }
+@media (max-width: 760px) { .wrap { grid-template-columns: 1fr; } }
+h1 { font: 600 1.15rem/1.2 var(--sans); margin: 0 0 4px; text-wrap: balance; }
+.sub { color: var(--muted); font-size: .85rem; margin: 0 0 16px; }
+nav { display: flex; flex-direction: column; gap: 6px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+@media (max-width: 760px) { nav { position: static; flex-direction: row; flex-wrap: wrap; } nav .blk { flex: 1 1 140px; } }
+.blk { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; align-items: baseline; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; color: var(--ink); font: inherit; cursor: pointer; }
+.blk[aria-current="true"] { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.blk .n { font: 500 .8rem var(--mono); color: var(--muted); }
+.blk .t { font-size: .88rem; font-weight: 500; }
+.blk .c { font: .75rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.blk.done .c { color: var(--ok); }
+.bar { grid-column: 1 / -1; height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--ok); }
+main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; }
+.head h2 { font: 600 1.4rem/1.2 var(--sans); margin: 0; text-wrap: balance; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font: 500 .75rem var(--sans); letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
+.chip.warn { background: var(--cmd-bg); color: var(--cmd); }
+.nota { margin: 0; color: var(--muted); max-width: 68ch; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; }
+.meta { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font: .8rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.meta .tags span { margin-right: 8px; }
+.leia { font: 400 clamp(1.3rem, 2.4vw, 1.75rem)/1.6 var(--serif); margin: 0; max-width: 40ch; overflow-wrap: anywhere; }
+.cmd { font: 600 .82em var(--sans); color: var(--cmd); background: var(--cmd-bg); padding: 1px 7px; border-radius: 5px; white-space: nowrap; }
+.fill { color: var(--fill); font-style: italic; }
+.pause { font: 500 .6em var(--sans); color: var(--pause); border: 1px dashed var(--pause); border-radius: 99px; padding: 1px 8px; vertical-align: .2em; white-space: nowrap; }
+.silence { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.silence p { font: 400 1.4rem/1.5 var(--serif); margin: 0; }
+.count { font: 500 3rem/1 var(--mono); color: var(--accent); font-variant-numeric: tabular-nums; }
+label { font: 600 .75rem var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+textarea { width: 100%; min-height: 110px; resize: vertical; font: 1rem/1.5 var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+textarea:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 600px) { .cols { grid-template-columns: 1fr; } }
+.col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+pre.alvo { margin: 0; white-space: pre-wrap; font: 1rem/1.5 var(--sans); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-height: 110px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+button.b { font: 500 .92rem var(--sans); padding: 8px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+button.b.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+button.b.ok { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+.spacer { flex: 1; }
+.hint { font-size: .82rem; color: var(--muted); }
+kbd { font: .78rem var(--mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; }
+details.prep { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; }
+details.prep summary { cursor: pointer; font-weight: 600; }
+details.prep ol { margin: 8px 0 4px; padding-left: 20px; display: grid; gap: 4px; max-width: 72ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .85rem; color: var(--muted); align-items: center; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <aside>
+    <h1>Corpus de ditado F0b</h1>
+    <p class="sub" id="total"></p>
+    <nav id="nav" aria-label="Blocos"></nav>
+  </aside>
+  <main>
+    <details class="prep" id="prep">
+      <summary>Antes de gravar</summary>
+      <ol>
+        <li>No Handy, em Histórico, mude a retenção de gravações para <b>Nunca apagar</b>. Hoje ele guarda só as 5 últimas.</li>
+        <li>Use a configuração de sempre (modelo, idioma). O áudio é o que vale: os outros modelos serão testados depois em cima dele.</li>
+        <li>Clique no campo <b>Saída do Handy</b> antes de ditar, para o texto cair ali.</li>
+        <li>Leia a fala uma vez em silêncio, segure o atalho, fale, solte. Errou? Repita. A última tentativa é a que conta.</li>
+        <li>Cada bloco diz qual microfone e ambiente usar. Sem headset, faça com o embutido mesmo.</li>
+      </ol>
+      <div class="legend"><span><span class="cmd">vírgula</span> diga o comando</span><span><em class="fill">né</em> muleta, diga de propósito</span><span><span class="pause">pausa</span> pare ~2 s</span></div>
+    </details>
+
+    <div class="head">
+      <h2 id="btitle"></h2>
+      <div class="chips" id="bchips"></div>
+    </div>
+    <p class="nota" id="bnota"></p>
+
+    <section class="card" aria-live="polite">
+      <div class="meta"><span id="fid"></span><span class="tags" id="ftags"></span><span id="fest"></span></div>
+      <div id="stage"></div>
+      <div class="cols">
+        <div class="col">
+          <label for="out">Saída do Handy</label>
+          <textarea id="out" placeholder="Clique aqui e dite. O Handy cola o texto neste campo."></textarea>
+        </div>
+        <div class="col" id="alvoCol" hidden>
+          <label>Texto-alvo</label>
+          <pre class="alvo" id="alvo"></pre>
+        </div>
+      </div>
+      <div class="row">
+        <button class="b" id="prev" type="button">← Anterior</button>
+        <button class="b" id="toggleAlvo" type="button">Mostrar alvo</button>
+        <button class="b" id="mark" type="button">Marcar como gravada</button>
+        <span class="spacer"></span>
+        <button class="b primary" id="next" type="button">Próxima →</button>
+      </div>
+      <p class="hint">Atalhos com o campo fora de foco: <kbd>←</kbd> <kbd>→</kbd> navegam, <kbd>A</kbd> mostra o alvo.</p>
+    </section>
+
+    <div class="row">
+      <button class="b" id="copy" type="button">Copiar saídas coletadas (JSON)</button>
+      <span class="hint" id="copyMsg"></span>
+    </div>
+  </main>
+</div>
+
+<script>
+const BLOCKS = __CORPUS_JSON__;
+const KEY = "corpus-f0b-v1";
+let state = { pos: [0, 0], done: {}, out: {} };
+try { Object.assign(state, JSON.parse(localStorage.getItem(KEY)) || {}); } catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
+const $ = id => document.getElementById(id);
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const markup = s => esc(s)
+  .replace(/\{([^}]+)\}/g, '<span class="cmd">$1</span>')
+  .replace(/_([^_]+)_/g, '<em class="fill">$1</em>')
+  .replace(/⏸/g, '<span class="pause">pausa</span>');
+const mmss = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+const MIC = { embutido: "mic embutido", headset: "headset" };
+const AMB = { silencioso: "silêncio", ruido: "TV ou ventilador ligado" };
+let showAlvo = false, timer = null;
+
+function cur() { const [b, f] = state.pos; return { b: BLOCKS[b], f: BLOCKS[b].falas[f] }; }
+
+function renderNav() {
+  const all = BLOCKS.flatMap(b => b.falas);
+  const secs = all.reduce((a, f) => a + f.s, 0);
+  const got = all.filter(f => state.done[f.id]).length;
+  $("total").textContent = `${got} de ${all.length} falas · ~${Math.round(secs / 60)} min no total`;
+  $("nav").innerHTML = BLOCKS.map((b, i) => {
+    const n = b.falas.filter(f => state.done[f.id]).length, t = b.falas.length;
+    const min = Math.round(b.falas.reduce((a, f) => a + f.s, 0) / 60);
+    return `<button class="blk${n === t ? " done" : ""}" type="button" data-b="${i}" aria-current="${i === state.pos[0]}">
+      <span class="n">${b.id.slice(1)}</span><span class="t">${esc(b.titulo)}</span><span class="c">${n}/${t}</span>
+      <span class="bar"><i style="width:${(100 * n / t).toFixed(0)}%"></i></span>
+      <span class="c" style="grid-column:2/-1">~${min} min · ${MIC[b.mic] || b.mic}</span></button>`;
+  }).join("");
+}
+
+function render() {
+  clearInterval(timer);
+  const { b, f } = cur();
+  $("btitle").textContent = `Bloco ${b.id.slice(1)} · ${b.titulo}`;
+  $("bchips").innerHTML = `<span class="chip">${MIC[b.mic] || b.mic}</span><span class="chip${b.ambiente === "ruido" ? " warn" : ""}">${AMB[b.ambiente] || b.ambiente}</span>`;
+  $("bnota").innerHTML = markup(b.nota || "");
+  const i = state.pos[1];
+  $("fid").textContent = `${f.id} · ${i + 1} de ${b.falas.length}`;
+  $("ftags").innerHTML = f.tags.map(t => `<span>#${t}</span>`).join("");
+  $("fest").textContent = `~${mmss(f.s)}`;
+  const silent = f.tags.includes("silencio");
+  if (silent) {
+    $("stage").innerHTML = `<div class="silence"><p>Segure o atalho por 5 segundos <b>sem falar</b> e solte.</p>
+      <div class="row"><button class="b" type="button" id="go">Contar 5 s</button><span class="count" id="cnt">5</span></div></div>`;
+    $("go").onclick = () => { let n = 5; $("cnt").textContent = n; clearInterval(timer);
+      timer = setInterval(() => { n--; $("cnt").textContent = n; if (n <= 0) clearInterval(timer); }, 1000); };
+  } else {
+    $("stage").innerHTML = `<p class="leia">${markup(f.leia)}</p>`;
+  }
+  $("out").value = state.out[f.id] || "";
+  $("alvo").textContent = silent ? "(vazio)" : f.alvo;
+  $("alvoCol").hidden = !showAlvo;
+  $("toggleAlvo").textContent = showAlvo ? "Esconder alvo" : "Mostrar alvo";
+  const d = !!state.done[f.id];
+  $("mark").textContent = d ? "✓ Gravada" : "Marcar como gravada";
+  $("mark").className = "b" + (d ? " ok" : "");
+  $("prev").disabled = state.pos[0] === 0 && i === 0;
+  renderNav();
+}
+
+function move(delta) {
+  let [b, f] = state.pos; f += delta;
+  if (f < 0) { if (b === 0) return; b--; f = BLOCKS[b].falas.length - 1; }
+  if (f >= BLOCKS[b].falas.length) { if (b === BLOCKS.length - 1) return; b++; f = 0; }
+  state.pos = [b, f]; save(); render();
+}
+
+$("nav").addEventListener("click", e => {
+  const btn = e.target.closest(".blk"); if (!btn) return;
+  const b = +btn.dataset.b; const firstOpen = BLOCKS[b].falas.findIndex(f => !state.done[f.id]);
+  state.pos = [b, Math.max(0, firstOpen)]; save(); render();
+});
+$("prev").onclick = () => move(-1);
+$("next").onclick = () => move(1);
+$("toggleAlvo").onclick = () => { showAlvo = !showAlvo; render(); };
+$("mark").onclick = () => { const { f } = cur(); state.done[f.id] = !state.done[f.id]; save(); render(); };
+$("out").addEventListener("input", e => {
+  const { f } = cur(); state.out[f.id] = e.target.value;
+  if (e.target.value.trim()) state.done[f.id] = true;
+  save(); const d = !!state.done[f.id];
+  $("mark").textContent = d ? "✓ Gravada" : "Marcar como gravada"; $("mark").className = "b" + (d ? " ok" : ""); renderNav();
+});
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "TEXTAREA" || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "ArrowRight") move(1);
+  else if (e.key === "ArrowLeft") move(-1);
+  else if (e.key === "a" || e.key === "A") { showAlvo = !showAlvo; render(); }
+});
+$("copy").onclick = async () => {
+  const data = JSON.stringify({ gravadas: Object.keys(state.done).filter(k => state.done[k]), saidas: state.out }, null, 1);
+  try { await navigator.clipboard.writeText(data); $("copyMsg").textContent = "Copiado."; }
+  catch (e) { $("out").value = data; $("out").select(); $("copyMsg").textContent = "Não deu para copiar direto: o JSON está selecionado no campo, use ⌘C."; }
+};
+try { if (!localStorage.getItem(KEY)) $("prep").open = true; } catch (e) { $("prep").open = true; }
+render();
+</script>

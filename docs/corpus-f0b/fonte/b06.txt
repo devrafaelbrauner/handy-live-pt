@@ -1,0 +1,129 @@
+# b06 | Comandos de voz
+mic: headset
+ambiente: silencioso
+nota: Aqui você FALA a pontuação. Tudo que aparece em destaque, como {vírgula}, é dito em voz alta. O texto não mostra pontuação: ela vem só dos comandos.
+
+@ f01 | comandos
+leia: Bom dia {vírgula} equipe {ponto final} Hoje o plantão começa mais cedo {ponto de exclamação}
+alvo:
+Bom dia, equipe. Hoje o plantão começa mais cedo!
+
+@ f02 | comandos pergunta
+leia: Você vem amanhã {ponto de interrogação} Se vier {vírgula} traga os documentos do carro {ponto final}
+alvo:
+Você vem amanhã? Se vier, traga os documentos do carro.
+
+@ f03 | comandos paragrafos
+leia: Querido João {vírgula} {novo parágrafo} Obrigado pela ajuda na mudança {ponto final} Sem você não teríamos terminado a tempo {ponto final} {novo parágrafo} Um abraço {vírgula} {nova linha} Rafael
+alvo:
+Querido João,
+
+Obrigado pela ajuda na mudança. Sem você não teríamos terminado a tempo.
+
+Um abraço,
+Rafael
+
+@ s01 | silencio
+
+@ f04 | comandos lista
+leia: Itens para a viagem {dois pontos} {lista de tópicos} protetor solar {próximo item} óculos escuros {próximo item} carregador portátil {próximo item} documentos {fim da lista}
+alvo:
+Itens para a viagem:
+- Protetor solar
+- Óculos escuros
+- Carregador portátil
+- Documentos
+
+@ f05 | comandos lista paragrafos
+leia: Passos para a coleta {dois pontos} {lista numerada} higienizar as mãos {próximo item} identificar o tubo {próximo item} puncionar a veia {próximo item} descartar a agulha no coletor {fim da lista} Qualquer dúvida {vírgula} fale com a enfermeira responsável {ponto final}
+alvo:
+Passos para a coleta:
+1. Higienizar as mãos
+2. Identificar o tubo
+3. Puncionar a veia
+4. Descartar a agulha no coletor
+
+Qualquer dúvida, fale com a enfermeira responsável.
+
+@ f06 | comandos
+leia: Ele disse {abre aspas} volto já {fecha aspas} e sumiu por duas horas {abre parênteses} de novo {fecha parênteses} {ponto final}
+alvo:
+Ele disse “volto já” e sumiu por duas horas (de novo).
+
+@ f07 | comandos
+leia: O resultado {travessão} para surpresa de todos {travessão} foi negativo {reticências} ainda bem {ponto de exclamação}
+alvo:
+O resultado — para surpresa de todos — foi negativo… ainda bem!
+
+@ s02 | silencio
+
+@ f08 | comandos armadilha numeros
+leia: Esse ponto da reunião ficou confuso {vírgula} e o ônibus passa às oito em ponto {ponto final}
+alvo:
+Esse ponto da reunião ficou confuso, e o ônibus passa às 8h em ponto.
+
+@ f09 | comandos armadilha numeros
+leia: O time ganhou dois pontos na tabela {ponto final} A média subiu para sete vírgula cinco {ponto final}
+alvo:
+O time ganhou dois pontos na tabela. A média subiu para 7,5.
+
+@ f10 | comandos armadilha numeros
+leia: Tomei um café e comprei um quilo de açúcar {ponto final} Falta um dia para o prazo {ponto final}
+alvo:
+Tomei um café e comprei 1 kg de açúcar. Falta um dia para o prazo.
+
+@ f11 | comandos
+leia: Escreva {tudo em maiúsculas} atenção {fim das maiúsculas} no topo da página {ponto final} A palavra {literal} vírgula tem acento {ponto final}
+alvo:
+Escreva ATENÇÃO no topo da página. A palavra vírgula tem acento.
+
+@ f12 | comandos
+leia: Marque o perfil {arroba} hapfor {ponto e vírgula} depois use a tag {cerquilha} plantão {ponto final} O arquivo se chama escala {sem espaço} final {ponto final}
+alvo:
+Marque o perfil @hapfor; depois use a tag #plantão. O arquivo se chama escalafinal.
+
+@ s03 | silencio
+
+@ f13 | comandos pergunta
+leia: Então {vírgula} o que você acha {ponto de interrogação} {nova linha} Responde quando puder {ponto final}
+alvo:
+Então, o que você acha?
+Responde quando puder.
+
+@ f14 | comandos paragrafos lista numeros
+leia: Ata da reunião de vinte e seis de setembro {ponto final} {novo parágrafo} Presentes {dois pontos} Rafael {vírgula} Juliana e Marcos {ponto final} {novo parágrafo} Decisões {dois pontos} {lista numerada} manter a escala atual até dezembro {próximo item} contratar mais um plantonista para o noturno {próximo item} revisar o protocolo de sepse até o dia quinze {fim da lista} Próxima reunião em vinte e quatro de outubro {ponto final}
+alvo:
+Ata da reunião de 26 de setembro.
+
+Presentes: Rafael, Juliana e Marcos.
+
+Decisões:
+1. Manter a escala atual até dezembro
+2. Contratar mais um plantonista para o noturno
+3. Revisar o protocolo de sepse até o dia 15
+
+Próxima reunião em 24 de outubro.
+
+@ f15 | comandos pergunta
+leia: Pode me mandar o endereço {ponto de interrogação} Rua das Flores {vírgula} número trezentos e vinte {vírgula} apartamento cinquenta e dois {ponto final}
+alvo:
+Pode me mandar o endereço? Rua das Flores, número 320, apartamento 52.
+
+@ f16 | comandos lista paragrafos numeros
+leia: Recado para a equipe da noite {dois pontos} {novo parágrafo} O leito quatro está em isolamento de contato {vírgula} use avental e luvas {ponto final} {novo parágrafo} Pendências {dois pontos} {lista de tópicos} colher hemocultura do leito dois às vinte e duas horas {próximo item} checar a glicemia do leito seis {próximo item} ligar para a família do leito oito se houver piora {fim da lista} Boa noite a todos {ponto de exclamação}
+alvo:
+Recado para a equipe da noite:
+
+O leito 4 está em isolamento de contato, use avental e luvas.
+
+Pendências:
+- Colher hemocultura do leito 2 às 22h
+- Checar a glicemia do leito 6
+- Ligar para a família do leito 8 se houver piora
+
+Boa noite a todos!
+
+@ f17 | comandos pergunta
+leia: Você conferiu a planilha {ponto de interrogação} A coluna {abre aspas} total {fecha aspas} está somando errado {reticências} acho que é a fórmula {ponto final}
+alvo:
+Você conferiu a planilha? A coluna “total” está somando errado… acho que é a fórmula.
