@@ -31,6 +31,12 @@ ainda não publicou release.
   colado continua vindo da transcrição batch completa no stop. O padrão
   `Standard` mantém o comportamento anterior; `chunks_paste` fica reservado e
   desabilitado na UI.
+- Harness de avaliação `--manifest` (F0a do `docs/ULTRAPLAN.md`, #13):
+  `handy --manifest m.jsonl [--model ID] [--language CODE] [--vad off|silero|earshot]`
+  transcreve cada WAV do manifest JSONL pelo mesmo caminho do app (VAD do
+  recorder com o perfil offline, padding de clipe curto, transcrição batch com
+  os estágios de texto, OpenCC) e imprime uma linha JSON por fala (texto cru,
+  final, cada estágio, tempos) e uma linha de resumo.
 
 ### Changed
 
