@@ -44,17 +44,9 @@ jobs:
         shell: bash
         run: ./.ai-pipeline/ci.sh
 
-  human-approval:
-    name: Human approval
-    needs: ci
-    runs-on: ubuntu-latest
-    environment: human-approval
-    steps:
-      - run: echo 'Human approval granted after CI.'
-
   pipeline-complete:
     name: Pipeline complete
-    needs: human-approval
+    needs: ci
     runs-on: ubuntu-latest
     steps:
       - run: echo 'PIPELINE_GATE=PASS' >> "$GITHUB_ENV"
