@@ -3,6 +3,7 @@ use crate::audio_toolkit::{
     apply_custom_words, detect_output_language, normalize_transcription_output,
     remove_filler_words, OutputLanguageEvidence,
 };
+use crate::latency_trace::{self, Mark};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::model::{EngineType, ModelManager};
 use crate::settings::{
@@ -1004,10 +1005,18 @@ impl TranscriptionManager {
         self.stream_active.store(false, Ordering::Release);
 
         let manager = self.clone();
-        thread::spawn(move || manager.run_stream_worker(rx, worker_id));
+        // The worker can outlive this recording (a preview chunk still running
+        // after cancel), so it marks through the trace session it started in.
+        let trace = latency_trace::session();
+        thread::spawn(move || manager.run_stream_worker(rx, worker_id, trace));
     }
 
-    fn run_stream_worker(&self, rx: mpsc::Receiver<StreamCmd>, worker_id: u64) {
+    fn run_stream_worker(
+        &self,
+        rx: mpsc::Receiver<StreamCmd>,
+        worker_id: u64,
+        trace: latency_trace::Session,
+    ) {
         let _worker = StreamWorkerGuard {
             worker_id,
             active_stream_worker: Arc::clone(&self.active_stream_worker),
@@ -1108,6 +1117,7 @@ impl TranscriptionManager {
                         &settings,
                         supports_translate,
                         &languages,
+                        trace,
                     );
                     return;
                 }
@@ -1209,6 +1219,7 @@ impl TranscriptionManager {
                     StreamCmd::Feed(pcm) => {
                         self.touch_activity();
                         perf.record_feed(pcm.len());
+                        trace.mark(Mark::FirstFeed);
                         let feed_start = Instant::now();
                         match stream.feed(&pcm) {
                             Ok(update) => {
@@ -1222,7 +1233,7 @@ impl TranscriptionManager {
                                 if update.committed_changed || update.tentative_changed {
                                     let text = stream.text();
                                     perf.record_emit();
-                                    self.emit_stream_text(&text.committed, &text.tentative);
+                                    self.emit_stream_text(trace, &text.committed, &text.tentative);
                                 }
                                 perf.maybe_log();
                             }
@@ -1332,6 +1343,7 @@ impl TranscriptionManager {
         settings: &AppSettings,
         supports_translate: bool,
         languages: &[String],
+        trace: latency_trace::Session,
     ) {
         let (model_is_whisper, backend) = match &engine {
             LoadedEngine::TranscribeCpp(session) => (
@@ -1400,6 +1412,7 @@ impl TranscriptionManager {
                             &chunk,
                             &run_options,
                             &mut preview,
+                            trace,
                         ) {
                             break;
                         }
@@ -1418,6 +1431,7 @@ impl TranscriptionManager {
                             &chunk,
                             &run_options,
                             &mut preview,
+                            trace,
                         );
                     }
                     finalize_reply = Some(reply);
@@ -1442,6 +1456,7 @@ impl TranscriptionManager {
 
     /// Transcribe one preview chunk and emit the grown preview text. Returns
     /// false when no usable engine remains (it panicked and was discarded).
+    #[allow(clippy::too_many_arguments)]
     fn run_preview_chunk(
         &self,
         engine: &mut Option<LoadedEngine>,
@@ -1450,11 +1465,13 @@ impl TranscriptionManager {
         chunk: &[f32],
         run_options: &RunOptions,
         preview: &mut String,
+        trace: latency_trace::Session,
     ) -> bool {
         let Some(LoadedEngine::TranscribeCpp(session)) = engine.as_mut() else {
             return false;
         };
         self.touch_activity();
+        trace.mark(Mark::FirstFeed);
         let started = Instant::now();
         match catch_unwind(AssertUnwindSafe(|| session.run(chunk, run_options))) {
             Ok(Ok(transcript)) => {
@@ -1467,7 +1484,7 @@ impl TranscriptionManager {
                     real_time_factor(audio_secs, compute_secs)
                 );
                 append_preview_text(preview, &transcript.text);
-                self.emit_stream_text(preview, "");
+                self.emit_stream_text(trace, preview, "");
                 true
             }
             Ok(Err(e)) => {
@@ -1614,7 +1631,12 @@ impl TranscriptionManager {
         .emit(&self.app_handle);
     }
 
-    fn emit_stream_text(&self, committed: &str, tentative: &str) {
+    /// Send live text to the overlay. The recording's first non-blank text is
+    /// its `FirstText` latency mark.
+    fn emit_stream_text(&self, trace: latency_trace::Session, committed: &str, tentative: &str) {
+        if !committed.trim().is_empty() || !tentative.trim().is_empty() {
+            trace.mark(Mark::FirstText);
+        }
         let _ = StreamTextEvent {
             committed: committed.to_string(),
             tentative: tentative.to_string(),

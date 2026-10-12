@@ -11,6 +11,7 @@ mod commands;
 mod harness;
 mod helpers;
 mod input;
+mod latency_trace;
 mod llm_client;
 mod managers;
 mod memory;

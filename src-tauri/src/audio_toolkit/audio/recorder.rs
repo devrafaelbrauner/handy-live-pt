@@ -19,6 +19,7 @@ use crate::audio_toolkit::{
     vad::{self, VadFrame},
     VoiceActivityDetector,
 };
+use crate::latency_trace::{self, Mark};
 use crate::settings::MIN_FINAL_SECS;
 
 enum Cmd {
@@ -725,8 +726,12 @@ fn handle_frame(
     audio_cb: &Option<AudioFrameCallback>,
     out_buf: &mut Vec<f32>,
     segment: &mut SegmentState,
+    trace: latency_trace::Session,
 ) {
     let mut emit = |buf: &[f32]| {
+        // First frame VAD lets through (any frame with VAD off): one relaxed
+        // load per frame once set.
+        trace.mark(Mark::FirstSpeech);
         out_buf.extend_from_slice(buf);
         if let Some(cb) = audio_cb {
             cb(buf);
@@ -814,6 +819,8 @@ struct CaptureProcessor {
     capture_ready_tx: Option<mpsc::Sender<()>>,
     total_dropped_samples: u64,
     overrun_warning_logged: bool,
+    /// Latency trace of the transcription session this recording belongs to.
+    trace: latency_trace::Session,
 }
 
 impl CaptureProcessor {
@@ -867,6 +874,7 @@ impl CaptureProcessor {
             capture_ready_tx: None,
             total_dropped_samples: 0,
             overrun_warning_logged: false,
+            trace: latency_trace::Session::NONE,
         }
     }
 
@@ -878,6 +886,9 @@ impl CaptureProcessor {
     /// Reset per-recording state and arm the first-sample acknowledgement.
     fn begin_recording(&mut self, policy: VadPolicy, ready_tx: mpsc::Sender<()>) {
         self.awaiting_first_captured_chunk = Some(Instant::now());
+        // Bound here (not per mark) so a stop drain racing a new press can
+        // never stamp the next session.
+        self.trace = latency_trace::session();
         self.capture_ready_tx = Some(ready_tx);
         self.total_dropped_samples = 0;
         self.overrun_warning_logged = false;
@@ -934,6 +945,8 @@ impl CaptureProcessor {
         if disposition == ChunkDisposition::Discard {
             return;
         }
+        // Before VAD runs on it, so this always precedes `FirstSpeech`.
+        self.trace.mark(Mark::FirstFrame);
 
         if let Some(buckets) = self.visualizer.feed(raw) {
             if let Some(callback) = &self.level_cb {
@@ -942,6 +955,7 @@ impl CaptureProcessor {
         }
 
         let vad_policy = self.vad_policy;
+        let trace = self.trace;
         self.frame_resampler.push(raw, |frame: &[f32]| {
             handle_frame(
                 frame,
@@ -950,6 +964,7 @@ impl CaptureProcessor {
                 &self.audio_cb,
                 &mut self.processed_samples,
                 &mut self.segment,
+                trace,
             )
         });
 
@@ -986,6 +1001,7 @@ impl CaptureProcessor {
     /// Flush the resampler tail and hand back the finished recording.
     fn finish_recording(&mut self) -> Vec<f32> {
         let vad_policy = self.vad_policy;
+        let trace = self.trace;
         self.frame_resampler.finish(|frame: &[f32]| {
             handle_frame(
                 frame,
@@ -994,6 +1010,7 @@ impl CaptureProcessor {
                 &self.audio_cb,
                 &mut self.processed_samples,
                 &mut self.segment,
+                trace,
             )
         });
 

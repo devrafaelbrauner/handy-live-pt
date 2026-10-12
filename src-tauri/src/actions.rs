@@ -2,6 +2,7 @@
 use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error, VadPolicy};
+use crate::latency_trace::{self, Mark, Outcome};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::HistoryManager;
 use crate::managers::model::ModelManager;
@@ -156,6 +157,16 @@ fn live_start_plan(
             && !model_supports_streaming
             && vad_enabled,
         vad_policy,
+    }
+}
+
+/// Live-text path a recording planned, as named in its latency trace line.
+/// `ChunksPaste` currently behaves like `Preview`, so both read "preview".
+fn live_trace_label(use_live_worker: bool, model_supports_streaming: bool) -> &'static str {
+    match (use_live_worker, model_supports_streaming) {
+        (false, _) => "off",
+        (true, true) => "native",
+        (true, false) => "preview",
     }
 }
 
@@ -508,6 +519,7 @@ pub(crate) async fn process_transcription_output(
 
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+        let trace = latency_trace::begin();
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
 
@@ -555,6 +567,10 @@ impl ShortcutAction for TranscribeAction {
             settings.vad_enabled,
             model_supports_streaming,
             settings.live_mode,
+        );
+        trace.describe(
+            &settings.selected_model,
+            live_trace_label(use_live_worker, model_supports_streaming),
         );
         if use_live_worker {
             tm.start_stream(preview_segments);
@@ -651,6 +667,7 @@ impl ShortcutAction for TranscribeAction {
             tm.cancel_stream();
             utils::hide_recording_overlay(app);
             set_tray_state(app, TrayIconState::Idle);
+            trace.finish(Outcome::Error);
             if let Some(err) = recording_error {
                 let error_type = if is_microphone_access_denied(&err) {
                     "microphone_permission_denied"
@@ -676,6 +693,9 @@ impl ShortcutAction for TranscribeAction {
     }
 
     fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+        let trace = latency_trace::session();
+        trace.mark(Mark::Release);
+
         // Prevent a slow microphone from emitting a ready event or start chime
         // after the user has already requested stop.
         app.state::<Arc<AudioRecordingManager>>()
@@ -737,6 +757,7 @@ impl ShortcutAction for TranscribeAction {
                     tm.cancel_stream();
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
+                    trace.finish(Outcome::Cancelled);
                     return;
                 }
 
@@ -747,6 +768,7 @@ impl ShortcutAction for TranscribeAction {
                     tm.cancel_stream();
                     utils::hide_recording_overlay(&ah);
                     set_tray_state(&ah, TrayIconState::Idle);
+                    trace.finish(Outcome::Empty);
                 } else {
                     // Save WAV concurrently with transcription
                     let sample_count = samples.len();
@@ -802,6 +824,7 @@ impl ShortcutAction for TranscribeAction {
                         debug!("Transcription operation cancelled before output handling");
                         utils::hide_recording_overlay(&ah);
                         set_tray_state(&ah, TrayIconState::Idle);
+                        trace.finish(Outcome::Cancelled);
                         return;
                     }
 
@@ -829,13 +852,16 @@ impl ShortcutAction for TranscribeAction {
                                 debug!("Transcription operation cancelled during output handling");
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
+                                trace.finish(Outcome::Cancelled);
                                 return;
                             };
+                            trace.mark(Mark::FinalText);
 
                             if rm.was_cancelled_since(cancel_generation) {
                                 debug!("Transcription operation cancelled before paste");
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
+                                trace.finish(Outcome::Cancelled);
                                 return;
                             }
 
@@ -855,6 +881,7 @@ impl ShortcutAction for TranscribeAction {
                             if processed.final_text.is_empty() {
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
+                                trace.finish(Outcome::Empty);
                             } else {
                                 let ah_clone = ah.clone();
                                 let paste_time = Instant::now();
@@ -865,17 +892,23 @@ impl ShortcutAction for TranscribeAction {
                                         debug!("Transcription operation cancelled before paste");
                                         utils::hide_recording_overlay(&ah_clone);
                                         set_tray_state(&ah_clone, TrayIconState::Idle);
+                                        trace.finish(Outcome::Cancelled);
                                         return;
                                     }
 
                                     match utils::paste(final_text, ah_clone.clone()) {
-                                        Ok(()) => debug!(
-                                            "Text pasted successfully in {:?}",
-                                            paste_time.elapsed()
-                                        ),
+                                        Ok(()) => {
+                                            trace.mark(Mark::Pasted);
+                                            debug!(
+                                                "Text pasted successfully in {:?}",
+                                                paste_time.elapsed()
+                                            );
+                                            trace.finish(Outcome::Pasted);
+                                        }
                                         Err(e) => {
                                             error!("Failed to paste transcription: {}", e);
                                             let _ = ah_clone.emit("paste-error", ());
+                                            trace.finish(Outcome::Error);
                                         }
                                     }
                                     utils::hide_recording_overlay(&ah_clone);
@@ -885,6 +918,7 @@ impl ShortcutAction for TranscribeAction {
                                     error!("Failed to run paste on main thread: {:?}", e);
                                     utils::hide_recording_overlay(&ah);
                                     set_tray_state(&ah, TrayIconState::Idle);
+                                    trace.finish(Outcome::Error);
                                 });
                             }
                         }
@@ -895,6 +929,7 @@ impl ShortcutAction for TranscribeAction {
                                 );
                                 utils::hide_recording_overlay(&ah);
                                 set_tray_state(&ah, TrayIconState::Idle);
+                                trace.finish(Outcome::Cancelled);
                                 return;
                             }
 
@@ -916,6 +951,7 @@ impl ShortcutAction for TranscribeAction {
                             }
                             utils::hide_recording_overlay(&ah);
                             set_tray_state(&ah, TrayIconState::Idle);
+                            trace.finish(Outcome::Error);
                         }
                     }
                 }
@@ -925,6 +961,13 @@ impl ShortcutAction for TranscribeAction {
                 tm.cancel_stream();
                 utils::hide_recording_overlay(&ah);
                 set_tray_state(&ah, TrayIconState::Idle);
+                // `stop_recording` also returns nothing when a cancel landed
+                // during the stop.
+                trace.finish(if rm.was_cancelled_since(cancel_generation) {
+                    Outcome::Cancelled
+                } else {
+                    Outcome::Empty
+                });
             }
         });
 

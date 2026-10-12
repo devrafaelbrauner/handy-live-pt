@@ -17,8 +17,6 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
 
 ### F0a — Harness mínimo (alta)
 
-- [ ] Trace de latência no app (tecla → 1º quadro → 1ª fala no VAD → 1º feed →
-      1ª emissão; soltar → colar) para diagnosticar os 3–4 s do issue #4.
 - [ ] Linha de base: config atual (small + auto + Earshot) × turbo + `pt` ×
       Silero vs Earshot, com FLEURS pt_br (200 falas), 20–30 falas próprias e
       20 sondas de silêncio. Ferramentas prontas (#15): `scripts/f0a_fleurs.py`,
@@ -148,3 +146,5 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
 - [x] 2026-10-12 — F0a: preparação da linha de base — FLEURS pt_br, export do
       corpus F0b do histórico e comparação com IC 95% por bootstrap pareado
       (#15).
+- [x] 2026-10-12 — F0a: trace de latência por gravação no log do app (#16).
+      Falta ler as linhas `Latency trace` de gravações reais no Mac.
