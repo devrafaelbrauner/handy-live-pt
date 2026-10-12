@@ -41,6 +41,11 @@ ainda não publicou release.
   com o manifest pelo `id` e reporta WER/CER normalizado, WER formatado, P/R/F1
   de `, . ? ! :`, ITN exact-match, preservação (`raw` → `final`) e palavras
   inseridas nas sondas de silêncio, no total e por faixa de duração.
+- Preparação da linha de base da F0a (#15): `scripts/f0a_fleurs.py` baixa 200
+  falas do FLEURS pt_br (uma por frase) no formato do harness;
+  `scripts/corpus_f0b.py export` gera o manifest do corpus F0b a partir do
+  histórico do Handy; `scripts/f0a_metrics.py --baseline` compara duas
+  execuções com IC 95% por bootstrap pareado.
 
 ### Changed
 

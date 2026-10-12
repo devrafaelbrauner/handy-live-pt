@@ -21,14 +21,17 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
       1ª emissão; soltar → colar) para diagnosticar os 3–4 s do issue #4.
 - [ ] Linha de base: config atual (small + auto + Earshot) × turbo + `pt` ×
       Silero vs Earshot, com FLEURS pt_br (200 falas), 20–30 falas próprias e
-      20 sondas de silêncio.
+      20 sondas de silêncio. Ferramentas prontas (#15): `scripts/f0a_fleurs.py`,
+      `scripts/corpus_f0b.py export` e `scripts/f0a_metrics.py --baseline`;
+      falta rodar no Mac.
 
 ### F0b — Corpus pessoal (alta; depende de você)
 
 - [ ] Antes de gravar: mudar a retenção do histórico para "Nunca apagar" (o
       padrão guarda só os 5 últimos áudios).
 - [ ] Gravar os 8 blocos de `docs/corpus-f0b/` (131 falas + 24 sondas de
-      silêncio, ~60 min) e acompanhar com `scripts/corpus_f0b.py status`.
+      silêncio, ~60 min), acompanhar com `scripts/corpus_f0b.py status` e
+      exportar para o harness com `scripts/corpus_f0b.py export`.
 - [ ] Conjunto de concordância: ≥ 200 frases corretas + ≥ 200 com erros
       injetados e rotulados (concordância nominal/verbal, crase, homófono).
 - [ ] CORAA v1.1 (500 falas estratificadas) como controle.
@@ -142,3 +145,6 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
       (#13).
 - [x] 2026-10-12 — F0a: métricas sobre a saída do harness
       (`scripts/f0a_metrics.py`, #14).
+- [x] 2026-10-12 — F0a: preparação da linha de base — FLEURS pt_br, export do
+      corpus F0b do histórico e comparação com IC 95% por bootstrap pareado
+      (#15).
