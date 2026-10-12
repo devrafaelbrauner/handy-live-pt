@@ -48,7 +48,7 @@ jobs:
       target: ${{ matrix.target }}
       build-args: ${{ matrix.args }}
       upload-artifacts: true
-      # Fork has no signing secrets (only KILO_API_KEY). false routes to build.yml's
+      # Fork has no signing secrets. false routes to build.yml's
       # "Build with Tauri (unsigned)", which sets no signing env: macOS ad-hoc, Windows unsigned.
       sign-binaries: false
     secrets: inherit
