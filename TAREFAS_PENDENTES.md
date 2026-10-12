@@ -11,8 +11,10 @@ seguem o §3 (fases) e o §6 (decisões de 2026-09-27) do plano.
 
 ### Entrega e CI (alta)
 
-- [ ] PR #8 (rascunho): corpus F0b + `docs/ULTRAPLAN.md`. Atualizar o branch
-      com o `main`, que já não tem o gate Kilo, e aprovar.
+- [ ] PR #12 (rascunho): remove a aprovação humana do pipeline (CI →
+      `Pipeline complete`). Fazer merge.
+- [ ] PR #8 (rascunho): corpus F0b + `docs/ULTRAPLAN.md`. Depois do merge do
+      #12, atualizar o branch com o `main` e fazer merge.
 - [ ] PR #1 (rascunho do Copilot, atrás do `main`): outra abordagem para
       builds sem credenciais de assinatura, problema já resolvido no `main`
       pelo #6/#7. Decidir se fecha.

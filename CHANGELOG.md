@@ -52,5 +52,7 @@ ainda não publicou release.
   `tauri.conf.json` e a entrada de troubleshooting correspondente no
   `BUILD.md` (#6).
 - Gate de revisão Kilo (#11): o projeto não usa mais o KiloCode. Saem o job
-  `kilo-review` do `ai-pipeline.yml` e o `.ai-pipeline/kilo-review.sh`; o
-  pipeline passa a ser CI → aprovação humana → `Pipeline complete`.
+  `kilo-review` do `ai-pipeline.yml` e o `.ai-pipeline/kilo-review.sh`.
+- Aprovação humana no pipeline (#12): sai o job `human-approval` do
+  `ai-pipeline.yml`. O pipeline passa a ser CI → `Pipeline complete`; o merge
+  manual continua sendo a decisão humana (`.ai-pipeline/POLICY.md`).
