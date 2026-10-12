@@ -17,8 +17,6 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
 
 ### F0a — Harness mínimo (alta)
 
-- [ ] Métricas: WER/CER normalizado e formatado; P/R/F1 por `, . ? ! :`; ITN
-      exact-match; preservação de palavras.
 - [ ] Trace de latência no app (tecla → 1º quadro → 1ª fala no VAD → 1º feed →
       1ª emissão; soltar → colar) para diagnosticar os 3–4 s do issue #4.
 - [ ] Linha de base: config atual (small + auto + Earshot) × turbo + `pt` ×
@@ -142,3 +140,5 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
 - [x] 2026-10-12 — F0a: CLI do harness `--manifest`, `--language` e
       `--vad {off,silero,earshot}` com o VAD do app e saída JSON por fala
       (#13).
+- [x] 2026-10-12 — F0a: métricas sobre a saída do harness
+      (`scripts/f0a_metrics.py`, #14).
