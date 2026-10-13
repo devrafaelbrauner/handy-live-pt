@@ -40,10 +40,8 @@ The process is entirely local:
 
 ### Installation
 
-1. Download the latest release from the [releases page](https://github.com/cjpais/Handy/releases) or the [website](https://handy.computer)
-   - **macOS**: Also available via [Homebrew cask](https://formulae.brew.sh/cask/handy): `brew install --cask handy`
-   - **Windows**: Also available via [winget](https://github.com/microsoft/winget-pkgs): `winget install cjpais.Handy` \
-     **Note:** The Homebrew cask and winget package are not maintained by the Handy developers.
+1. Download the latest release from this fork's [releases page](https://github.com/devrafaelbrauner/handy-live-pt/releases). No release has been published yet: test installers come from the artifacts of the [Main Branch Build](https://github.com/devrafaelbrauner/handy-live-pt/actions/workflows/main-build.yml) workflow. See [Instalar no Windows](#instalar-no-windows).
+   - **Official Handy** (without this fork's cloud transcription): [cjpais/Handy releases](https://github.com/cjpais/Handy/releases), [handy.computer](https://handy.computer), Homebrew cask (`brew install --cask handy`) or winget (`winget install cjpais.Handy`). The Homebrew cask and winget package are not maintained by the Handy developers.
    - **Debian/Ubuntu**: Install the downloaded `.deb` with APT so required dependencies are installed automatically:
      ```bash
      sudo apt install ./Handy_*.deb
@@ -53,6 +51,35 @@ The process is entirely local:
 3. Launch Handy and grant necessary system permissions (microphone, accessibility)
 4. Configure your preferred keyboard shortcuts in Settings
 5. Start transcribing!
+
+### Instalar no Windows
+
+Requisitos: Windows 10 ou 11, x64 ou ARM64.
+
+1. Na [página de releases](https://github.com/devrafaelbrauner/handy-live-pt/releases) (enquanto não houver release, nos artefatos do [Main Branch Build](https://github.com/devrafaelbrauner/handy-live-pt/actions/workflows/main-build.yml)), baixe um dos instaladores:
+   - `…_x64-setup.exe` ou `…_arm64-setup.exe` (NSIS, recomendado): instala só para o seu usuário, sem pedir administrador;
+   - `…_x64_en-US.msi` ou `…_arm64_en-US.msi` (MSI): instala para todos os usuários, pede administrador e serve para implantação gerenciada.
+2. Opcional: confira o SHA-256 publicado nas notas do release com `Get-FileHash .\<arquivo> -Algorithm SHA256`.
+3. Os instaladores não têm assinatura de código, então o SmartScreen avisa "O Windows protegeu o computador". Clique em **Mais informações → Executar assim mesmo**.
+4. Se o WebView2 não estiver instalado, o instalador o baixa da Microsoft; nesse caso é preciso internet.
+5. Na primeira gravação, libere o microfone em **Configurações → Privacidade** (no Windows 11, **Privacidade e segurança**) **→ Microfone**, incluindo "Permitir que aplicativos da área de trabalho acessem seu microfone".
+
+Onde ficam os arquivos:
+
+| O quê                                         | Onde                                                 |
+| --------------------------------------------- | ---------------------------------------------------- |
+| Programa (NSIS)                               | `%LOCALAPPDATA%\Handy Live PT\handy-live-pt.exe`     |
+| Configurações, histórico, gravações e modelos | `%APPDATA%\com.rafael.handylive\`                    |
+| Logs                                          | `%LOCALAPPDATA%\com.rafael.handylive\logs\handy.log` |
+
+As chaves de API ficam sem criptografia no `settings_store.json` da pasta de configurações.
+
+- **GPU:** no x64, os modelos GGUF (transcribe.cpp: Whisper, Canary, Parakeet, Nemotron) usam a GPU por Vulkan quando o driver permite; senão, e sempre no ARM64, rodam na CPU.
+- **Linha de comando:** no Windows o executável se chama `handy-live-pt.exe` (por exemplo, `handy-live-pt.exe --toggle-transcription`), para não ser confundido com o `handy.exe` do Handy oficial.
+- **Handy oficial:** os dois convivem (pasta, dados, executável e desinstalação separados), mas usam o mesmo atalho padrão `Ctrl+Space`. Se usar os dois, troque o atalho de um deles.
+- **Atualizações:** este fork ainda não se atualiza sozinho. Baixe a versão nova e instale por cima.
+- **Atualizando de um build em que o programa ainda é `handy.exe`:** feche o Handy Live PT (inclusive o ícone da bandeja) antes de rodar o instalador. O instalador novo procura `handy-live-pt.exe` e não fecha o processo antigo.
+- **Desinstalar:** **Configurações → Aplicativos → Handy Live PT**. Configurações e histórico só são apagados se você marcar essa opção no desinstalador.
 
 ### Development Setup
 
@@ -325,6 +352,8 @@ We're actively working on several features and improvements. Contributions and f
 
 ## Verify Release Signatures
 
+> **Este fork:** os releases ainda não publicam assinaturas do atualizador (`.sig`), e a chave em `plugins.updater.pubkey` é a do Handy oficial. Para conferir um instalador deste fork, compare o SHA-256 com o das notas do release.
+
 Handy release artifacts are signed with Tauri's updater signature format. The public key is stored in [`src-tauri/tauri.conf.json`](src-tauri/tauri.conf.json) under `plugins.updater.pubkey`.
 
 To verify a release manually, set `ARTIFACT` to the filename you downloaded, save the `pubkey` value from `src-tauri/tauri.conf.json` to `handy.pub.b64`, then decode the public key and matching `.sig` file from base64 and verify the artifact with `minisign`:
@@ -384,9 +413,9 @@ If you're behind a proxy, firewall, or in a restricted network environment where
 
 The typical paths are:
 
-- **macOS**: `~/Library/Application Support/com.pais.handy/`
-- **Windows**: `C:\Users\{username}\AppData\Roaming\com.pais.handy\`
-- **Linux**: `~/.config/com.pais.handy/`
+- **macOS**: `~/Library/Application Support/com.rafael.handylive/`
+- **Windows**: `C:\Users\{username}\AppData\Roaming\com.rafael.handylive\`
+- **Linux**: `~/.config/com.rafael.handylive/`
 
 #### Step 2: Create Models Directory
 
@@ -394,10 +423,10 @@ Inside your app data directory, create a `models` folder if it doesn't already e
 
 ```bash
 # macOS/Linux
-mkdir -p ~/Library/Application\ Support/com.pais.handy/models
+mkdir -p ~/Library/Application\ Support/com.rafael.handylive/models
 
 # Windows (PowerShell)
-New-Item -ItemType Directory -Force -Path "$env:APPDATA\com.pais.handy\models"
+New-Item -ItemType Directory -Force -Path "$env:APPDATA\com.rafael.handylive\models"
 ```
 
 #### Step 3: Download Model Files
@@ -538,7 +567,7 @@ To opt out for GPU selection or debugging tools, fully quit Handy (including the
 
 ```powershell
 $env:HANDY_KEEP_VULKAN_IMPLICIT_LAYERS = "1"
-& "$env:ProgramFiles\Handy\handy.exe"
+& "$env:LOCALAPPDATA\Handy Live PT\handy-live-pt.exe"
 ```
 
 Adjust the executable path if needed. This override only applies to apps launched from that PowerShell session, not the Start menu. Handy also preserves any existing `VK_LOADER_LAYERS_DISABLE` value.

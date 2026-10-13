@@ -108,7 +108,7 @@ pub struct CliArgs {
     /// utterance as it finishes) instead of stdout. Use it on Windows: the app
     /// is a GUI program there, so PowerShell and cmd neither wait for it nor
     /// capture its stdout. Run it with
-    /// `Start-Process handy.exe -ArgumentList ... -Wait -PassThru`.
+    /// `Start-Process handy-live-pt.exe -ArgumentList ... -Wait -PassThru`.
     #[arg(long, value_name = "JSONL", requires = "manifest")]
     pub out: Option<PathBuf>,
 }
