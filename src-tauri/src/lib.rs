@@ -774,7 +774,10 @@ pub fn run(cli_args: CliArgs) {
                         let console_filter = console_filter.clone();
                         move |metadata| console_filter.enabled(metadata)
                     }),
-                    // File logs respect the user's settings (stored in FILE_LOG_LEVEL atomic)
+                    // File logs respect the user's settings (stored in FILE_LOG_LEVEL atomic).
+                    // Headless runs log to stderr only: a --manifest run writes thousands of
+                    // lines, which would rotate the app's log (KeepOne) and drop the user's
+                    // own entries, such as their latency traces.
                     Target::new(if let Some(data_dir) = portable::data_dir() {
                         TargetKind::Folder {
                             path: data_dir.join("logs"),
@@ -785,9 +788,9 @@ pub fn run(cli_args: CliArgs) {
                             file_name: Some("handy".into()),
                         }
                     })
-                    .filter(|metadata| {
+                    .filter(move |metadata| {
                         let file_level = FILE_LOG_LEVEL.load(Ordering::Relaxed);
-                        metadata.level() <= level_filter_from_u8(file_level)
+                        !headless_mode && metadata.level() <= level_filter_from_u8(file_level)
                     }),
                     // Stream logs to the webview (via the `log://log` event) so the
                     // debug panel's live log viewer can show them in real time. Only
