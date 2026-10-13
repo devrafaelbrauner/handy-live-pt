@@ -81,6 +81,14 @@ pub struct CliArgs {
     /// through the recorder's VAD with the offline profile, as a recording is.
     #[arg(long, value_enum, requires = "manifest")]
     pub vad: Option<VadMode>,
+
+    /// Write the --manifest results to this file (UTF-8 JSONL, one line per
+    /// utterance as it finishes) instead of stdout. Use it on Windows: the app
+    /// is a GUI program there, so PowerShell and cmd neither wait for it nor
+    /// capture its stdout. Run it with
+    /// `Start-Process handy.exe -ArgumentList ... -Wait -PassThru`.
+    #[arg(long, value_name = "JSONL", requires = "manifest")]
+    pub out: Option<PathBuf>,
 }
 
 /// `--vad` choices for the --manifest harness.

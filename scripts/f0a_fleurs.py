@@ -4,7 +4,7 @@ do split de teste, converte para o WAV que o harness aceita (16 kHz mono
 16-bit) e escreve o manifest.
 
     python3 scripts/f0a_fleurs.py [--out ~/handy-f0a/fleurs-pt_br] [--count 200]
-    handy --manifest ~/handy-f0a/fleurs-pt_br/manifest.jsonl --model ID --language pt --vad silero > r.jsonl
+    handy --manifest ~/handy-f0a/fleurs-pt_br/manifest.jsonl --model ID --language pt --vad silero --out r.jsonl
     python3 scripts/f0a_metrics.py r.jsonl --manifest ~/handy-f0a/fleurs-pt_br/manifest.jsonl
 
 Seleção: uma gravação por frase, as primeiras em ordem de nome de arquivo (os

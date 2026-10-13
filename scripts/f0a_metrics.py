@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """Métricas da F0a (docs/ULTRAPLAN.md §3 e §4) sobre a saída do harness `handy --manifest`.
 
-    handy --manifest m.jsonl --model ID --language pt --vad silero > resultados.jsonl
+    handy --manifest m.jsonl --model ID --language pt --vad silero --out resultados.jsonl
     python3 scripts/f0a_metrics.py resultados.jsonl --manifest m.jsonl [--ref alvo] [--hyp final] [--json relatorio.json]
     python3 scripts/f0a_metrics.py candidato.jsonl --manifest m.jsonl --baseline base.jsonl [--samples 2000] [--seed 0]
+
+No Windows (PowerShell), o handy.exe é um programa gráfico: rode-o com
+`Start-Process` e `-Wait`, e os resultados saem pelo --out (e `python` no lugar
+de `python3`):
+
+    Start-Process "$env:LOCALAPPDATA\\Handy Live PT\\handy.exe" -Wait -PassThru -RedirectStandardError harness.log `
+      -ArgumentList '--manifest m.jsonl --model ID --language pt --vad silero --out resultados.jsonl'
 
 Cada linha `"type": "utterance"` do harness é juntada pelo `id` com a entrada do
 manifest (o mesmo arquivo passado ao harness, ou outro com os mesmos ids; sem
