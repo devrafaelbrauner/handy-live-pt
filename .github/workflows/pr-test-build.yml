@@ -43,7 +43,9 @@ jobs:
       platform: ${{ matrix.platform }}
       target: ${{ matrix.target }}
       build-args: ${{ matrix.args }}
-      sign-binaries: true
+      # Fork has no signing secrets. false routes to build.yml's
+      # "Build with Tauri (unsigned)", which sets no signing env: macOS ad-hoc, Windows unsigned.
+      sign-binaries: false
       asset-prefix: "handy-pr-${{ inputs.pr_number }}"
       upload-artifacts: true
       is-debug-build: ${{ contains(matrix.args, '--debug') }}

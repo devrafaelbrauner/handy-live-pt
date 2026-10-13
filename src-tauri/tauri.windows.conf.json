@@ -1,4 +1,5 @@
 {
+  "mainBinaryName": "handy-live-pt",
   "bundle": {
     "resources": {
       "resources": "resources",
