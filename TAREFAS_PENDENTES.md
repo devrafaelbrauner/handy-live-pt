@@ -21,8 +21,15 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
       Silero vs Earshot, com FLEURS pt_br (200 falas), 20–30 falas próprias e
       20 sondas de silêncio. Ferramentas prontas (#15): `scripts/f0a_fleurs.py`,
       `scripts/corpus_f0b.py export` e `scripts/f0a_metrics.py --baseline`;
-      falta rodar (no Windows, `handy.exe` com `--out` via `Start-Process -Wait`,
-      #17).
+      FLEURS medido no Windows (GTX 1060, Silero, `pt`, 2026-10-13): WER
+      normalizado Nemotron 11,3%, Whisper Small 8,9%, large-v3-turbo 4,9%,
+      Parakeet TDT v3 5,8%, Canary 1B v2 5,4%, Granite 4.1 2B plus 14,3%. Falta
+      o corpus F0b e a config com Earshot.
+- [ ] Lentidão na GPU (Windows, GTX 1060, Vulkan): um processo com o
+      large-v3-turbo cai de ~2 s para ~24,6 s constantes por fala depois de
+      10–60 transcrições (GPU ocupada a ~47 W, CPU ociosa); um processo novo
+      volta ao normal. Granite mostrou o mesmo padrão. Investigar antes de
+      adotar o turbo no app.
 
 ### F0b — Corpus pessoal (alta; depende de você)
 
@@ -39,8 +46,11 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
 
 ### F1 — Modelo e decode (alta)
 
-- [ ] Ativar Whisper large-v3-turbo Q8_0 + idioma `pt`, com migração única
-      ("Você dita em português?"), porque o `auto` já está gravado.
+- [ ] Escolher o modelo final: turbo tem o menor WER; Canary 1B v2 e Parakeet
+      v3 ficam a < 1 pp dele (diferença não significativa) com pontuação
+      melhor (F1 88,6% e 88,5% vs 84,6%). Ativar o escolhido + idioma `pt`, com
+      migração única ("Você dita em português?"), porque o `auto` já está
+      gravado.
 - [ ] Prompt do Whisper: 2–3 frases pt bem pontuadas + glossário, com probe
       de eco.
 - [ ] Knobs de decode: `temperature_fallback`, `no_speech_thold`, `n_threads`
@@ -148,5 +158,9 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
       corpus F0b do histórico e comparação com IC 95% por bootstrap pareado
       (#15).
 - [x] 2026-10-12 — F0a: trace de latência por gravação no log do app (#16).
-      Falta ler as linhas `Latency trace` de gravações reais (Windows:
-      `%LOCALAPPDATA%\com.rafael.handylive\logs\handy.log`).
+      Medido no Windows com Nemotron (16 ditados, preset LowLatency): fala →
+      1º texto 621 ms (mediana), soltar → colar 338 ms; com o preset Maximum,
+      fala → 1º texto 791 ms. O "aperto → 1º texto" de 3–5 s vinha da espera
+      antes de falar.
+- [x] 2026-10-13 — Pós-processamento por LLM pulado sem prompt selecionado
+      (#18) e harness enchendo o log do app (#19), achados no teste real.
