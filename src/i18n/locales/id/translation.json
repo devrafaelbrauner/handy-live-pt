@@ -12,6 +12,7 @@
   "sidebar": {
     "general": "Umum",
     "models": "Model",
+    "cloud": "API Cloud",
     "advanced": "Lanjutan",
     "postProcessing": "Pascaproses",
     "history": "Riwayat",
@@ -144,6 +145,8 @@
     "downloadSpeed": "{{speed}} MB/s",
     "cancel": "Batal",
     "cancelDownload": "Batalkan unduhan",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "Transkripsi cloud aktif",
     "capabilities": {
       "languageSelection": "Mendukung beberapa bahasa masukan",
       "singleLanguage": "Hanya mendukung bahasa ini",
@@ -157,6 +160,39 @@
   "settings": {
     "modelSettings": {
       "title": "Pengaturan {{model}}"
+    },
+    "cloud": {
+      "transcription": {
+        "title": "Transkripsi Cloud",
+        "enabled": {
+          "label": "Gunakan transkripsi cloud",
+          "description": "Kirim setiap rekaman ke penyedia di bawah alih-alih mentranskripsikannya di komputer ini. Memerlukan koneksi internet, dan audio Anda keluar dari perangkat ini."
+        },
+        "provider": {
+          "title": "Penyedia",
+          "description": "Layanan yang mentranskripsikan rekaman Anda. Semua opsi menggunakan API transkripsi OpenAI.",
+          "custom": "Kustom (kompatibel dengan OpenAI)"
+        },
+        "baseUrl": {
+          "title": "URL Dasar",
+          "description": "Alamat server Anda yang kompatibel dengan OpenAI. Rekaman dikirim ke alamat ini diikuti /audio/transcriptions.",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "Kunci API",
+          "description": "Hanya disimpan di pengaturan Handy di komputer ini. Pascaproses menggunakan kunci yang sama untuk penyedia ini.",
+          "placeholder": "Tempel kunci API Anda",
+          "getKey": "Dapatkan kunci API"
+        },
+        "model": {
+          "title": "Model",
+          "description": "Model ucapan-ke-teks yang digunakan untuk setiap rekaman. Segarkan untuk menampilkan model yang ditawarkan penyedia ini.",
+          "placeholderWithOptions": "Cari atau pilih model",
+          "placeholderNoOptions": "Ketik nama model",
+          "refreshModels": "Segarkan model"
+        },
+        "missingApiKey": "Tambahkan kunci API {{provider}} Anda untuk mentranskripsi di cloud."
+      }
     },
     "general": {
       "title": "Umum",
@@ -212,6 +248,7 @@
     "models": {
       "title": "Model Transkripsi",
       "description": "Pilih model transkripsi atau unduh model tambahan. Setiap model menawarkan tingkat akurasi dan kecepatan yang berbeda.",
+      "cloudActive": "Transkripsi cloud aktif, jadi model lokal tidak digunakan. Matikan di API Cloud untuk mentranskripsi di komputer ini.",
       "searchPlaceholder": "Cari model berdasarkan nama…",
       "yourModels": "Model yang Diunduh",
       "availableModels": "Tersedia untuk Diunduh",

@@ -117,6 +117,31 @@ where
     }
 }
 
+/// Batch-transcribe a finished recording with the configured backend: the cloud
+/// provider when cloud transcription is on, otherwise the local model. A cloud
+/// upload is abandoned as soon as the operation is cancelled; the caller's own
+/// cancellation check then discards the result.
+async fn transcribe_batch<C: Fn() -> bool>(
+    app: &AppHandle,
+    tm: &TranscriptionManager,
+    samples: Vec<f32>,
+    is_cancelled: C,
+) -> anyhow::Result<String> {
+    let settings = get_settings(app);
+    if !settings.cloud_transcription_enabled {
+        return tm.transcribe(samples);
+    }
+    match complete_unless_cancelled(
+        crate::cloud_transcription::transcribe(&settings, &samples),
+        is_cancelled,
+    )
+    .await
+    {
+        Some(result) => result.map_err(anyhow::Error::msg),
+        None => Err(anyhow::anyhow!("Cloud transcription cancelled")),
+    }
+}
+
 fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool {
     style == OverlayStyle::Live && is_streaming
 }
@@ -441,6 +466,11 @@ pub(crate) struct ProcessedTranscription {
 /// resolves it independently so it agrees with the language the transcription ran
 /// in, without threading a value through the pipeline.
 fn resolve_effective_language(app: &AppHandle, settings: &AppSettings) -> String {
+    // A cloud provider is not bound to a local model's language list; it gets
+    // the intent as-is (see `cloud_transcription::language_hint`).
+    if settings.cloud_transcription_enabled {
+        return settings.selected_language.clone();
+    }
     let tm = app.state::<Arc<TranscriptionManager>>();
     let model_manager = app.state::<Arc<ModelManager>>();
     let active_model = tm
@@ -505,10 +535,15 @@ impl ShortcutAction for TranscribeAction {
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();
         let rm = app.state::<Arc<AudioRecordingManager>>();
+        let settings = get_settings(app);
+        let use_cloud = settings.cloud_transcription_enabled;
 
-        // Load ASR model and VAD model in parallel
+        // Load ASR model and VAD model in parallel. A cloud provider replaces
+        // the local model, so it is not loaded at all.
         let kickoff_started = Instant::now();
-        tm.initiate_model_load();
+        if !use_cloud {
+            tm.initiate_model_load();
+        }
         let rm_clone = Arc::clone(&rm);
         std::thread::spawn(move || {
             if let Err(e) = rm_clone.preload_vad() {
@@ -524,7 +559,6 @@ impl ShortcutAction for TranscribeAction {
 
         // Get the microphone mode to determine audio feedback timing
         let plan_started = Instant::now();
-        let settings = get_settings(app);
         let is_always_on = settings.always_on_microphone;
 
         let selected_model_info = app
@@ -534,19 +568,23 @@ impl ShortcutAction for TranscribeAction {
         // Use the app-facing model capability as the single pre-recording source
         // for live streaming decisions. Unknown support is represented as false
         // until the model registry is updated by discovery or runtime load.
-        let model_supports_streaming = selected_model_info
-            .as_ref()
-            .map(|m| m.supports_streaming)
-            .unwrap_or(false);
+        // Cloud transcription runs once on the finished recording: it never
+        // streams and gets no live preview.
+        let model_supports_streaming = !use_cloud
+            && selected_model_info
+                .as_ref()
+                .map(|m| m.supports_streaming)
+                .unwrap_or(false);
+        let live_mode = if use_cloud {
+            LiveMode::Standard
+        } else {
+            settings.live_mode
+        };
         let LiveStartPlan {
             use_live_worker,
             preview_segments,
             vad_policy,
-        } = live_start_plan(
-            settings.vad_enabled,
-            model_supports_streaming,
-            settings.live_mode,
-        );
+        } = live_start_plan(settings.vad_enabled, model_supports_streaming, live_mode);
         trace.describe(
             &settings.selected_model,
             live_trace_label(use_live_worker, model_supports_streaming),
@@ -771,7 +809,12 @@ impl ShortcutAction for TranscribeAction {
                         // surfaced instead — the worker may still hold the engine,
                         // so a batch fallback would contend with it.
                         Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
-                        Ok(_) => tm.transcribe(samples),
+                        Ok(_) => {
+                            transcribe_batch(&ah, &tm, samples, || {
+                                rm.was_cancelled_since(cancel_generation)
+                            })
+                            .await
+                        }
                         Err(err) => Err(err),
                     };
 

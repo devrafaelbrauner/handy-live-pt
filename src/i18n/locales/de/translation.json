@@ -12,6 +12,7 @@
   "sidebar": {
     "general": "Allgemein",
     "models": "Modelle",
+    "cloud": "Cloud-API",
     "advanced": "Erweitert",
     "postProcessing": "Nachbearbeitung",
     "history": "Verlauf",
@@ -152,15 +153,51 @@
     },
     "cancel": "Abbrechen",
     "cancelDownload": "Download abbrechen",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "Cloud-Transkription ist aktiv",
     "legacy": "Veraltet"
   },
   "settings": {
     "modelSettings": {
       "title": "{{model}}-Einstellungen"
     },
+    "cloud": {
+      "transcription": {
+        "title": "Cloud-Transkription",
+        "enabled": {
+          "label": "Cloud-Transkription verwenden",
+          "description": "Sende jede Aufnahme an den unten gewählten Anbieter, statt sie auf diesem Computer zu transkribieren. Erfordert eine Internetverbindung, und deine Audiodaten verlassen dieses Gerät."
+        },
+        "provider": {
+          "title": "Anbieter",
+          "description": "Dienst, der deine Aufnahmen transkribiert. Alle Optionen nutzen die Transkriptions-API von OpenAI.",
+          "custom": "Benutzerdefiniert (OpenAI-kompatibel)"
+        },
+        "baseUrl": {
+          "title": "Basis-URL",
+          "description": "Adresse deines OpenAI-kompatiblen Servers. Aufnahmen werden an diese Adresse gefolgt von /audio/transcriptions gesendet.",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "API-Schlüssel",
+          "description": "Wird nur in den Handy-Einstellungen auf diesem Computer gespeichert. Die Nachbearbeitung nutzt denselben Schlüssel für diesen Anbieter.",
+          "placeholder": "API-Schlüssel einfügen",
+          "getKey": "API-Schlüssel erhalten"
+        },
+        "model": {
+          "title": "Modell",
+          "description": "Sprache-zu-Text-Modell für jede Aufnahme. Aktualisiere, um die Modelle dieses Anbieters aufzulisten.",
+          "placeholderWithOptions": "Modell suchen oder auswählen",
+          "placeholderNoOptions": "Modellnamen eingeben",
+          "refreshModels": "Modelle aktualisieren"
+        },
+        "missingApiKey": "Füge deinen {{provider}}-API-Schlüssel hinzu, um in der Cloud zu transkribieren."
+      }
+    },
     "models": {
       "title": "Transkriptionsmodelle",
       "description": "Wähle ein Transkriptionsmodell aus oder lade zusätzliche Modelle herunter. Verschiedene Modelle bieten unterschiedliche Genauigkeits- und Geschwindigkeitsstufen.",
+      "cloudActive": "Cloud-Transkription ist aktiv, daher werden lokale Modelle nicht verwendet. Deaktiviere sie unter Cloud-API, um auf diesem Computer zu transkribieren.",
       "deleteConfirm": "Bist du sicher, dass du {{modelName}} löschen möchtest? Du musst es erneut herunterladen, um es zu verwenden.",
       "deleteActiveConfirm": "{{modelName}} ist dein aktives Modell. Das Löschen stoppt Transkriptionen, bis du ein neues Modell auswählst. Bist du sicher?",
       "deleteTitle": "Modell löschen",

@@ -7,6 +7,7 @@ mod autostart;
 mod catalog;
 pub mod cli;
 mod clipboard;
+mod cloud_transcription;
 mod commands;
 mod harness;
 mod helpers;
@@ -718,6 +719,12 @@ pub fn run(cli_args: CliArgs) {
             commands::transcription::set_model_unload_timeout,
             commands::transcription::get_model_load_status,
             commands::transcription::unload_model_manually,
+            commands::cloud_transcription::change_cloud_transcription_enabled_setting,
+            commands::cloud_transcription::set_cloud_transcription_provider,
+            commands::cloud_transcription::change_cloud_transcription_api_key_setting,
+            commands::cloud_transcription::change_cloud_transcription_model_setting,
+            commands::cloud_transcription::change_cloud_transcription_base_url_setting,
+            commands::cloud_transcription::fetch_cloud_transcription_models,
             commands::history::get_history_entries,
             commands::history::toggle_history_entry_saved,
             commands::history::get_audio_file_path,

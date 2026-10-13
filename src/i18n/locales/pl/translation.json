@@ -12,6 +12,7 @@
   "sidebar": {
     "general": "Ogólne",
     "models": "Modele",
+    "cloud": "API w chmurze",
     "advanced": "Zaawansowane",
     "postProcessing": "Postproces",
     "history": "Historia",
@@ -152,15 +153,51 @@
     },
     "cancel": "Anuluj",
     "cancelDownload": "Anuluj pobieranie",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "Transkrypcja w chmurze jest włączona",
     "legacy": "Przestarzałe"
   },
   "settings": {
     "modelSettings": {
       "title": "Ustawienia {{model}}"
     },
+    "cloud": {
+      "transcription": {
+        "title": "Transkrypcja w chmurze",
+        "enabled": {
+          "label": "Używaj transkrypcji w chmurze",
+          "description": "Wysyłaj każde nagranie do poniższego dostawcy zamiast transkrybować je na tym komputerze. Wymaga połączenia z internetem, a Twój dźwięk opuszcza to urządzenie."
+        },
+        "provider": {
+          "title": "Dostawca",
+          "description": "Usługa, która transkrybuje Twoje nagrania. Każda opcja korzysta z API transkrypcji OpenAI.",
+          "custom": "Niestandardowy (zgodny z OpenAI)"
+        },
+        "baseUrl": {
+          "title": "Adres bazowy",
+          "description": "Adres Twojego serwera zgodnego z OpenAI. Nagrania są wysyłane na ten adres z dopiskiem /audio/transcriptions.",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "Klucz API",
+          "description": "Przechowywany tylko w ustawieniach Handy na tym komputerze. Postproces używa tego samego klucza dla tego dostawcy.",
+          "placeholder": "Wklej swój klucz API",
+          "getKey": "Uzyskaj klucz API"
+        },
+        "model": {
+          "title": "Model",
+          "description": "Model zamiany mowy na tekst używany dla każdego nagrania. Odśwież, aby wyświetlić modele oferowane przez tego dostawcę.",
+          "placeholderWithOptions": "Wyszukaj lub wybierz model",
+          "placeholderNoOptions": "Wpisz nazwę modelu",
+          "refreshModels": "Odśwież modele"
+        },
+        "missingApiKey": "Dodaj klucz API {{provider}}, aby transkrybować w chmurze."
+      }
+    },
     "models": {
       "title": "Modele transkrypcji",
       "description": "Wybierz model transkrypcji lub pobierz dodatkowe modele. Różne modele oferują różne poziomy dokładności i szybkości.",
+      "cloudActive": "Transkrypcja w chmurze jest włączona, więc modele lokalne nie są używane. Wyłącz ją w sekcji API w chmurze, aby transkrybować na tym komputerze.",
       "deleteConfirm": "Czy na pewno chcesz usunąć {{modelName}}? Będziesz musiał pobrać go ponownie, aby go użyć.",
       "deleteActiveConfirm": "{{modelName}} jest Twoim aktywnym modelem. Usunięcie go zatrzyma transkrypcje, dopóki nie wybierzesz nowego modelu. Czy na pewno chcesz kontynuować?",
       "deleteTitle": "Usuń model",

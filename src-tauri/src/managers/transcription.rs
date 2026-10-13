@@ -2383,6 +2383,25 @@ fn post_process_transcription_text_traced(
     text
 }
 
+/// Apply the optional cleanup local engines get (custom-word correction, filler
+/// removal, whitespace normalization) to text from a cloud provider.
+/// `language_hint` is the language sent with the request; `detected_language`
+/// is the one the provider reported back, if any. Cloud models are not limited
+/// to a published language list, so text-based detection is unconstrained.
+pub(crate) fn clean_cloud_transcription(
+    raw: String,
+    settings: &AppSettings,
+    custom_words_prompted: bool,
+    language_hint: Option<&str>,
+    detected_language: Option<String>,
+) -> String {
+    let output_language = with_model_detected_language(
+        resolve_output_language_evidence(settings, language_hint, &[], false),
+        detected_language,
+    );
+    post_process_transcription_text(raw, settings, custom_words_prompted, &output_language, &[])
+}
+
 /// Optional text cleanup must never discard a successful model result. The
 /// transform is pure and owns its input, so recovering the untouched text is
 /// safe even if a bug in custom-word or filler filtering unwinds.

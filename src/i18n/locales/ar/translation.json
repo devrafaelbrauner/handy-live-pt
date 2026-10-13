@@ -16,7 +16,8 @@
     "history": "السجل",
     "debug": "تصحيح الأخطاء",
     "about": "حول",
-    "models": "النماذج"
+    "models": "النماذج",
+    "cloud": "API السحابية"
   },
   "onboarding": {
     "subtitle": "للبدء، اختر نموذج التفريغ الصوتي",
@@ -143,6 +144,8 @@
     "downloadSpeed": "{{speed}} ميجابايت/ث",
     "cancel": "إلغاء",
     "cancelDownload": "إلغاء التنزيل",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "النسخ السحابي مفعّل",
     "capabilities": {
       "languageSelection": "يدعم اختيار اللغة",
       "singleLanguage": "يدعم هذه اللغة فقط",
@@ -635,9 +638,43 @@
     "modelSettings": {
       "title": "إعدادات {{model}}"
     },
+    "cloud": {
+      "transcription": {
+        "title": "النسخ السحابي",
+        "enabled": {
+          "label": "استخدام النسخ السحابي",
+          "description": "أرسل كل تسجيل إلى المزود أدناه بدلاً من نسخه على هذا الحاسوب. يتطلب اتصالاً بالإنترنت، ويغادر صوتك هذا الجهاز."
+        },
+        "provider": {
+          "title": "المزود",
+          "description": "الخدمة التي تنسخ تسجيلاتك. تستخدم جميع الخيارات واجهة OpenAI للنسخ.",
+          "custom": "مخصص (متوافق مع OpenAI)"
+        },
+        "baseUrl": {
+          "title": "URL الأساسي",
+          "description": "عنوان خادمك المتوافق مع OpenAI. تُرسل التسجيلات إلى هذا العنوان متبوعاً بـ /audio/transcriptions.",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "مفتاح API",
+          "description": "يُخزن فقط في إعدادات Handy على هذا الحاسوب. تستخدم المعالجة اللاحقة المفتاح نفسه لهذا المزود.",
+          "placeholder": "الصق مفتاح API",
+          "getKey": "احصل على مفتاح API"
+        },
+        "model": {
+          "title": "النموذج",
+          "description": "نموذج تحويل الكلام إلى نص المستخدم لكل تسجيل. حدّث لعرض النماذج التي يقدمها هذا المزود.",
+          "placeholderWithOptions": "ابحث عن نموذج أو اختره",
+          "placeholderNoOptions": "اكتب اسم النموذج",
+          "refreshModels": "تحديث النماذج"
+        },
+        "missingApiKey": "أضف مفتاح API الخاص بـ {{provider}} للنسخ عبر السحابة."
+      }
+    },
     "models": {
       "title": "نماذج النسخ",
       "description": "اختر نموذج نسخ أو قم بتنزيل نماذج إضافية. تقدم النماذج المختلفة مستويات متفاوتة من الدقة والسرعة.",
+      "cloudActive": "النسخ السحابي مفعّل، لذا لا تُستخدم النماذج المحلية. أوقفه في API السحابية للنسخ على هذا الحاسوب.",
       "yourModels": "النماذج المحمّلة",
       "availableModels": "متاح للتنزيل",
       "deleteConfirm": "هل أنت متأكد أنك تريد حذف {{modelName}}؟ ستحتاج إلى تنزيله مرة أخرى لاستخدامه.",

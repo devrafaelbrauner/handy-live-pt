@@ -1,6 +1,8 @@
 # Handy
 
 > **Handy Live PT** — fork pessoal (não-oficial, sem afiliação) do [cjpais/handy](https://github.com/cjpais/handy) para pesquisa e desenvolvimento de transcrição ao vivo em português (pt-BR) no macOS. Este fork é renomeado ("Handy Live PT", `com.rafael.handylive`) e usa ícones próprios; "Handy" é marca do projeto upstream. Objetivo do fork: expor presets de latência de streaming e pseudo-streaming por segmentos VAD para modelos batch (ver `PLANO.md` na raiz do workspace).
+>
+> **handy-live-pt-cloud** — fork derivado do [devrafaelbrauner/handy-live-pt](https://github.com/devrafaelbrauner/handy-live-pt) que acrescenta [transcrição na nuvem com chave de API](#transcrição-na-nuvem-chaves-de-api) (OpenAI, OpenRouter, Groq ou servidor compatível com OpenAI). A transcrição local continua sendo o padrão; a nuvem só é usada quando você liga a opção.
 
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/WVBeWsNXK4)
 
@@ -55,6 +57,34 @@ The process is entirely local:
 ### Development Setup
 
 For detailed build instructions including platform-specific requirements, see [BUILD.md](BUILD.md).
+
+## Transcrição na nuvem (chaves de API)
+
+Este fork pode enviar cada gravação a um provedor de transcrição na nuvem em vez de usar o modelo local. A opção vem desligada: o áudio só sai do computador depois que você a liga.
+
+1. Abra **Configurações → API na Nuvem**.
+2. Escolha o provedor e cole a chave da API:
+
+   | Provedor                              | Modelo padrão            | Chave                                                                |
+   | ------------------------------------- | ------------------------ | -------------------------------------------------------------------- |
+   | OpenAI                                | `gpt-transcribe`         | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+   | OpenRouter                            | `openai/gpt-transcribe`  | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys)   |
+   | Groq                                  | `whisper-large-v3-turbo` | [console.groq.com/keys](https://console.groq.com/keys)               |
+   | Personalizado (compatível com OpenAI) | `whisper-1`              | a do seu servidor (opcional)                                         |
+
+3. Ligue **Usar transcrição na nuvem**. O rodapé passa a mostrar o provedor e o modelo em uso.
+4. Para trocar o modelo, escolha outro na lista ou digite o nome. O botão de atualizar busca os modelos de transcrição que o provedor oferece.
+
+Como funciona:
+
+- Todos os provedores recebem a gravação pelo endpoint `POST {URL base}/audio/transcriptions` da API da OpenAI, em WAV 16 kHz mono.
+- As chaves ficam no `settings_store.json` do Handy, neste computador, no mesmo lugar das chaves do pós-processamento. A chave da OpenAI, da OpenRouter ou da Groq é digitada uma vez e serve aos dois recursos.
+- O idioma vem de **Geral → Idioma**; "Automático" deixa o provedor detectar. A tradução para inglês continua disponível só nos modelos locais.
+- As palavras personalizadas vão como `keywords[]` no `gpt-transcribe` e como `prompt` nos demais modelos. O OpenRouter ignora `prompt`, então nele a correção dessas palavras é feita localmente, como nos modelos locais sem prompt.
+- Gravações longas são enviadas em partes de até 5 minutos, cortadas no trecho mais silencioso perto de cada limite.
+- Com a nuvem ligada não há texto ao vivo durante a gravação: o texto chega quando a gravação termina. Histórico, "tentar novamente" no histórico, remoção de muletas e pós-processamento funcionam como antes. Cancelar durante o envio descarta o resultado.
+- Chave recusada, falta de créditos, limite de uso e modelo inexistente aparecem como notificação de erro.
+- A linha de comando `--transcribe-file` continua usando sempre o modelo local, porque serve para medir modelos locais.
 
 ## Integrations
 

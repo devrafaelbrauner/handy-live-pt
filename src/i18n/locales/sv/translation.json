@@ -12,6 +12,7 @@
   "sidebar": {
     "general": "Allmänt",
     "models": "Modeller",
+    "cloud": "Moln-API",
     "advanced": "Avancerat",
     "postProcessing": "Efterbearbetning",
     "history": "Historik",
@@ -143,6 +144,8 @@
     "downloadSpeed": "{{speed}} MB/s",
     "cancel": "Avbryt",
     "cancelDownload": "Avbryt nedladdning",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "Molntranskribering är på",
     "capabilities": {
       "languageSelection": "Stöder flera indataspråk",
       "singleLanguage": "Stöder endast detta språk",
@@ -157,6 +160,39 @@
   "settings": {
     "modelSettings": {
       "title": "{{model}}-inställningar"
+    },
+    "cloud": {
+      "transcription": {
+        "title": "Molntranskribering",
+        "enabled": {
+          "label": "Använd molntranskribering",
+          "description": "Skicka varje inspelning till leverantören nedan i stället för att transkribera den på den här datorn. Kräver internetanslutning, och ditt ljud lämnar den här enheten."
+        },
+        "provider": {
+          "title": "Leverantör",
+          "description": "Tjänst som transkriberar dina inspelningar. Alla alternativ använder OpenAI:s transkriberings-API.",
+          "custom": "Anpassad (OpenAI-kompatibel)"
+        },
+        "baseUrl": {
+          "title": "Bas-URL",
+          "description": "Adressen till din OpenAI-kompatibla server. Inspelningar skickas till den här adressen följt av /audio/transcriptions.",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "API-nyckel",
+          "description": "Lagras endast i Handys inställningar på den här datorn. Efterbearbetning använder samma nyckel för den här leverantören.",
+          "placeholder": "Klistra in din API-nyckel",
+          "getKey": "Skaffa en API-nyckel"
+        },
+        "model": {
+          "title": "Modell",
+          "description": "Tal-till-text-modell som används för varje inspelning. Uppdatera för att lista modellerna som leverantören erbjuder.",
+          "placeholderWithOptions": "Sök eller välj en modell",
+          "placeholderNoOptions": "Ange ett modellnamn",
+          "refreshModels": "Uppdatera modeller"
+        },
+        "missingApiKey": "Lägg till din API-nyckel för {{provider}} för att transkribera i molnet."
+      }
     },
     "general": {
       "title": "Allmänt",
@@ -212,6 +248,7 @@
     "models": {
       "title": "Transkriptionsmodeller",
       "description": "Välj en transkriptionsmodell eller ladda ner ytterligare modeller. Olika modeller erbjuder varierande nivåer av noggrannhet och hastighet.",
+      "cloudActive": "Molntranskribering är på, så lokala modeller används inte. Stäng av den i Moln-API för att transkribera på den här datorn.",
       "yourModels": "Nedladdade modeller",
       "availableModels": "Tillgängliga att ladda ner",
       "deleteConfirm": "Är du säker på att du vill ta bort {{modelName}}? Du måste ladda ner den igen för att använda den.",

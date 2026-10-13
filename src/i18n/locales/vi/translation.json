@@ -12,6 +12,7 @@
   "sidebar": {
     "general": "Chung",
     "models": "Mô hình",
+    "cloud": "API đám mây",
     "advanced": "Nâng cao",
     "postProcessing": "Xử lý sau",
     "history": "Lịch sử",
@@ -152,15 +153,51 @@
     },
     "cancel": "Hủy",
     "cancelDownload": "Hủy tải xuống",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "Phiên âm đám mây đang bật",
     "legacy": "Cũ"
   },
   "settings": {
     "modelSettings": {
       "title": "Cài đặt {{model}}"
     },
+    "cloud": {
+      "transcription": {
+        "title": "Phiên âm đám mây",
+        "enabled": {
+          "label": "Dùng phiên âm đám mây",
+          "description": "Gửi mỗi bản ghi đến nhà cung cấp bên dưới thay vì phiên âm trên máy tính này. Yêu cầu kết nối internet và âm thanh của bạn sẽ rời khỏi thiết bị này."
+        },
+        "provider": {
+          "title": "Nhà cung cấp",
+          "description": "Dịch vụ phiên âm các bản ghi của bạn. Mọi tùy chọn đều dùng API phiên âm của OpenAI.",
+          "custom": "Tùy chỉnh (Tương thích OpenAI)"
+        },
+        "baseUrl": {
+          "title": "URL cơ sở",
+          "description": "Địa chỉ máy chủ tương thích OpenAI của bạn. Bản ghi được gửi đến địa chỉ này kèm theo /audio/transcriptions.",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "Khóa API",
+          "description": "Chỉ được lưu trong cài đặt của Handy trên máy tính này. Xử lý sau dùng cùng khóa cho nhà cung cấp này.",
+          "placeholder": "Dán khóa API của bạn",
+          "getKey": "Lấy khóa API"
+        },
+        "model": {
+          "title": "Mô hình",
+          "description": "Mô hình chuyển giọng nói thành văn bản dùng cho mọi bản ghi. Làm mới để liệt kê các mô hình nhà cung cấp này hỗ trợ.",
+          "placeholderWithOptions": "Tìm kiếm hoặc chọn một mô hình",
+          "placeholderNoOptions": "Nhập tên mô hình",
+          "refreshModels": "Làm mới mô hình"
+        },
+        "missingApiKey": "Thêm khóa API {{provider}} để phiên âm trên đám mây."
+      }
+    },
     "models": {
       "title": "Mô hình chuyển đổi",
       "description": "Chọn mô hình chuyển đổi hoặc tải thêm mô hình. Các mô hình khác nhau có mức độ chính xác và tốc độ khác nhau.",
+      "cloudActive": "Phiên âm đám mây đang bật nên các mô hình cục bộ không được dùng. Tắt nó trong API đám mây để phiên âm trên máy tính này.",
       "deleteConfirm": "Bạn có chắc chắn muốn xóa {{modelName}}? Bạn sẽ cần tải lại để sử dụng.",
       "deleteActiveConfirm": "{{modelName}} là mô hình đang hoạt động của bạn. Xóa nó sẽ dừng phiên âm cho đến khi bạn chọn một mô hình mới. Bạn có chắc không?",
       "deleteTitle": "Xóa mô hình",

@@ -12,6 +12,7 @@
   "sidebar": {
     "general": "Geral",
     "models": "Modelos",
+    "cloud": "API na Nuvem",
     "advanced": "Avançado",
     "postProcessing": "Pós-Processamento",
     "history": "Histórico",
@@ -152,11 +153,46 @@
     },
     "cancel": "Cancelar",
     "cancelDownload": "Cancelar download",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "Transcrição na nuvem ativada",
     "legacy": "Legado"
   },
   "settings": {
     "modelSettings": {
       "title": "Configurações de {{model}}"
+    },
+    "cloud": {
+      "transcription": {
+        "title": "Transcrição na Nuvem",
+        "enabled": {
+          "label": "Usar transcrição na nuvem",
+          "description": "Envia cada gravação ao provedor abaixo em vez de transcrevê-la neste computador. Requer conexão com a internet, e seu áudio sai deste dispositivo."
+        },
+        "provider": {
+          "title": "Provedor",
+          "description": "Serviço que transcreve suas gravações. Todas as opções usam a API de transcrição da OpenAI.",
+          "custom": "Personalizado (compatível com OpenAI)"
+        },
+        "baseUrl": {
+          "title": "URL Base",
+          "description": "Endereço do seu servidor compatível com OpenAI. As gravações são enviadas para este endereço seguido de /audio/transcriptions.",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "Chave da API",
+          "description": "Fica salva apenas nas configurações do Handy neste computador. O pós-processamento usa a mesma chave para este provedor.",
+          "placeholder": "Cole sua chave da API",
+          "getKey": "Obter uma chave da API"
+        },
+        "model": {
+          "title": "Modelo",
+          "description": "Modelo de fala para texto usado em todas as gravações. Atualize para listar os modelos que este provedor oferece.",
+          "placeholderWithOptions": "Buscar ou selecionar um modelo",
+          "placeholderNoOptions": "Digite o nome de um modelo",
+          "refreshModels": "Atualizar modelos"
+        },
+        "missingApiKey": "Adicione sua chave da API da {{provider}} para transcrever na nuvem."
+      }
     },
     "general": {
       "title": "Geral",
@@ -212,6 +248,7 @@
     "models": {
       "title": "Modelos de Transcrição",
       "description": "Selecione um modelo de transcrição ou baixe modelos adicionais. Diferentes modelos oferecem diferentes níveis de precisão e velocidade.",
+      "cloudActive": "A transcrição na nuvem está ativada, então os modelos locais não são usados. Desative-a em API na Nuvem para transcrever neste computador.",
       "deleteConfirm": "Tem certeza de que deseja excluir {{modelName}}? Você precisará baixá-lo novamente para usá-lo.",
       "deleteActiveConfirm": "{{modelName}} é o seu modelo ativo. Excluí-lo interromperá as transcrições até que você selecione um novo modelo. Tem certeza?",
       "deleteTitle": "Excluir Modelo",

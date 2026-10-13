@@ -12,6 +12,7 @@
   "sidebar": {
     "general": "一般",
     "models": "モデル",
+    "cloud": "クラウド API",
     "advanced": "詳細設定",
     "postProcessing": "後処理",
     "history": "履歴",
@@ -152,15 +153,51 @@
     },
     "cancel": "キャンセル",
     "cancelDownload": "ダウンロードをキャンセル",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "クラウド文字起こしが有効です",
     "legacy": "旧式"
   },
   "settings": {
     "modelSettings": {
       "title": "{{model}} の設定"
     },
+    "cloud": {
+      "transcription": {
+        "title": "クラウド文字起こし",
+        "enabled": {
+          "label": "クラウド文字起こしを使用",
+          "description": "このコンピューターで文字起こしする代わりに、各録音を下のプロバイダーに送信します。インターネット接続が必要で、音声はこのデバイスの外に送信されます。"
+        },
+        "provider": {
+          "title": "プロバイダー",
+          "description": "録音を文字起こしするサービス。すべての選択肢で OpenAI の文字起こし API を使用します。",
+          "custom": "カスタム (OpenAI 互換)"
+        },
+        "baseUrl": {
+          "title": "ベース URL",
+          "description": "OpenAI 互換サーバーのアドレス。録音はこのアドレスに /audio/transcriptions を付けた先に送信されます。",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "API キー",
+          "description": "このコンピューター上の Handy の設定にのみ保存されます。後処理でもこのプロバイダーには同じキーを使用します。",
+          "placeholder": "API キーを貼り付け",
+          "getKey": "API キーを取得"
+        },
+        "model": {
+          "title": "モデル",
+          "description": "すべての録音に使用する音声認識モデル。更新すると、このプロバイダーが提供するモデルを一覧表示します。",
+          "placeholderWithOptions": "モデルを検索または選択",
+          "placeholderNoOptions": "モデル名を入力",
+          "refreshModels": "モデルを更新"
+        },
+        "missingApiKey": "クラウドで文字起こしするには {{provider}} の API キーを追加してください。"
+      }
+    },
     "models": {
       "title": "文字起こしのモデル",
       "description": "文字起こしのモデルを選択するか、追加のモデルをダウンロードします。異なるモデルは精度と速度のレベルが異なります。",
+      "cloudActive": "クラウド文字起こしが有効なため、ローカルモデルは使用されません。このコンピューターで文字起こしするには、クラウド API でオフにしてください。",
       "deleteConfirm": "{{modelName}}を削除してもよろしいですか? 再度使用するにはダウンロードが必要です。",
       "deleteActiveConfirm": "{{modelName}}は現在使用中のモデルです。削除すると、新しいモデルを選択するまで文字起こしが停止します。本当に削除しますか?",
       "deleteTitle": "モデルを削除",
