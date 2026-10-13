@@ -86,17 +86,20 @@ pub struct CliArgs {
 
     /// Live model for --manifest: load this downloaded transcribe-cpp model
     /// with native streaming (supports_streaming in --list-models --json) into
-    /// the live slot and replay each WAV through it at 1x real time (20 ms
-    /// frames, as the microphone feeds a recording) before the final pass, as
-    /// the app does when the transcription model has no live text of its own.
-    /// The live text is discarded. Utterance lines gain live_model,
-    /// live_first_text_ms, live_text, live_updates and release_to_final_ms; the
-    /// summary gains live_load_ms and the medians of live_first_text_ms and
-    /// release_to_final_ms. The run takes at least as long as the audio.
+    /// the live slot and replay each WAV through it at 1x real time before the
+    /// final pass, as the app does when the transcription model has no live
+    /// text of its own. The replay feeds what the recorder would: every frame
+    /// with --vad off, only the frames the --vad backend lets through (offline
+    /// profile) otherwise. The live text is discarded. Utterance lines gain
+    /// live_model, live_first_text_ms, live_text, live_updates and
+    /// release_to_final_ms; the summary gains live_load_ms and the medians of
+    /// live_first_text_ms and release_to_final_ms. The run takes at least as
+    /// long as the audio.
     #[arg(
         long,
         value_name = "ID",
         requires = "manifest",
+        conflicts_with = "transcribe_file",
         value_parser = clap::builder::NonEmptyStringValueParser::new()
     )]
     pub live_model: Option<String>,

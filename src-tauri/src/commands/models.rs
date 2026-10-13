@@ -81,6 +81,16 @@ pub async fn delete_model(
         write_settings(&app_handle, settings);
     }
 
+    // Deleting the live model: free its engine and turn the live model off,
+    // so the setting never points at a model that is gone.
+    if settings.live_model == model_id {
+        transcription_manager.unload_live_model();
+
+        let mut settings = get_settings(&app_handle);
+        settings.live_model = String::new();
+        write_settings(&app_handle, settings);
+    }
+
     model_manager
         .delete_model(&model_id)
         .map_err(|e| e.to_string())

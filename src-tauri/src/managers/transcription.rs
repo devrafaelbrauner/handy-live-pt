@@ -50,6 +50,9 @@ const PARAKEET_STREAM: u32 = 0x54534B50;
 const STREAM_PERF_LOG_INTERVAL: Duration = Duration::from_secs(5);
 const STREAM_FINALIZE_REPLY_TIMEOUT: Duration = Duration::from_secs(30);
 const ENGINE_LEASE_POLL_INTERVAL: Duration = Duration::from_millis(10);
+/// How often a live-slot worker waiting for the live model to load checks
+/// whether stop/cancel closed its route.
+const LIVE_LOAD_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(message) = payload.downcast_ref::<&str>() {
@@ -484,6 +487,17 @@ struct LiveSlot<E> {
     /// Nonzero (the worker id) while a live stream worker has the engine out
     /// of `engine`.
     lease: Arc<AtomicU64>,
+    /// Bumped by every [`Self::clear`] (an unload). A load records it before
+    /// building its engine and [`Self::install`] refuses the engine when it
+    /// changed meanwhile, so an unload (setting change, tray, exit) that lands
+    /// during a load is never undone by that load finishing. Written only
+    /// while `model_id` is locked.
+    generation: AtomicU64,
+    /// Set when a background load is asked for while another live load runs
+    /// (e.g. the live model setting changed mid-load); the running load then
+    /// re-checks the setting when it finishes instead of the request being
+    /// lost.
+    reload_requested: AtomicBool,
 }
 
 impl<E> LiveSlot<E> {
@@ -494,6 +508,8 @@ impl<E> LiveSlot<E> {
             is_loading: Arc::new(Mutex::new(false)),
             loading_condvar: Arc::new(Condvar::new()),
             lease: Arc::new(AtomicU64::new(0)),
+            generation: AtomicU64::new(0),
+            reload_requested: AtomicBool::new(false),
         }
     }
 
@@ -535,19 +551,41 @@ impl<E> LiveSlot<E> {
 
     /// Empty the slot, returning its engine for the caller to drop outside the
     /// locks. A leased engine is dropped by its worker when it comes back.
+    /// Invalidates every load already in progress (see [`Self::install`]).
     fn clear(&self) -> Option<E> {
+        let mut id = self.lock_model_id();
+        *id = None;
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        self.lock_engine().take()
+    }
+
+    /// Empty the slot to free its engine before a load builds the next one,
+    /// without invalidating that load. Loads are serialized by `is_loading`,
+    /// so there is no other load to invalidate.
+    fn evict(&self) -> Option<E> {
         let mut id = self.lock_model_id();
         *id = None;
         self.lock_engine().take()
     }
 
-    /// Put a freshly loaded engine in the slot, returning any engine it
-    /// replaced (a concurrent load) for the caller to drop.
-    fn install(&self, model_id: &str, engine: E) -> Option<E> {
+    /// The current unload generation; a load records it before building its
+    /// engine and hands it to [`Self::install`].
+    fn generation(&self) -> u64 {
+        let _id = self.lock_model_id();
+        self.generation.load(Ordering::Acquire)
+    }
+
+    /// Put a freshly loaded engine in the slot when no unload happened since
+    /// the load recorded `generation`. `Ok` carries any engine it replaced;
+    /// `Err` gives the refused engine back. Either is for the caller to drop.
+    fn install(&self, model_id: &str, engine: E, generation: u64) -> Result<Option<E>, E> {
         let mut id = self.lock_model_id();
+        if self.generation.load(Ordering::Acquire) != generation {
+            return Err(engine);
+        }
         let replaced = self.lock_engine().replace(engine);
         *id = Some(model_id.to_string());
-        replaced
+        Ok(replaced)
     }
 
     /// Take the engine out for a stream worker that holds the lease.
@@ -1132,44 +1170,81 @@ impl TranscriptionManager {
 
     /// Load `model_id` into the live slot, replacing any model there. Blocking:
     /// waits for an in-progress live load first. Errs if the model is unknown,
-    /// not downloaded or not a transcribe-cpp model, or if the loaded model does
-    /// not support native streaming (the slot is left empty then). Never touches
-    /// the main slot and emits no `model-state-changed` events: those drive the
-    /// main-model UI.
+    /// not downloaded or not a transcribe-cpp model, if the loaded model does
+    /// not support native streaming (the slot is left empty then), or if the
+    /// live slot was unloaded while this load ran. Never touches the main slot
+    /// and emits no `model-state-changed` events: those drive the main-model UI.
     pub fn load_live_model(&self, model_id: &str) -> Result<()> {
         let _loading = self.begin_live_load();
-        self.load_into_live_slot(model_id)
+        let generation = self.live.generation();
+        self.load_into_live_slot(model_id, generation)
     }
 
     /// Background load of `settings.live_model` into the live slot when it is
     /// set and not already loaded there; no-op otherwise. Never blocks the
-    /// caller: a live stream started right after waits for this load.
+    /// caller: a live stream started right after waits for this load. Called
+    /// while another live load runs, it asks that load to re-check the setting
+    /// when it finishes (see [`Self::settle_live_slot`]).
     pub fn initiate_live_model_load(&self) {
         let settings = get_settings(&self.app_handle);
         let model_id = settings.live_model.trim();
         if model_id.is_empty() {
             return;
         }
-        let loading = {
+        let (loading, generation) = {
             let mut is_loading = self.live.is_loading.lock().unwrap();
-            if *is_loading || self.live.holds(model_id) {
+            if *is_loading {
+                self.live.reload_requested.store(true, Ordering::Release);
+                return;
+            }
+            if self.live.holds(model_id) {
                 return;
             }
             *is_loading = true;
-            LoadingGuard {
+            self.live.reload_requested.store(false, Ordering::Release);
+            let loading = LoadingGuard {
                 is_loading: Arc::clone(&self.live.is_loading),
                 loading_condvar: Arc::clone(&self.live.loading_condvar),
-            }
+            };
+            (loading, self.live.generation())
         };
         let manager = self.clone();
         let model_id = model_id.to_string();
         thread::spawn(move || {
             // Held for the whole load: live stream workers wait on it.
             let _loading = loading;
-            if let Err(e) = manager.load_into_live_slot(&model_id) {
+            manager.settle_live_slot(model_id, generation);
+        });
+    }
+
+    /// Background loop behind [`Self::initiate_live_model_load`]: load
+    /// `model_id`, then keep the slot in step with `settings.live_model`. A
+    /// setting changed during the load (its reload request) is loaded next, and
+    /// a setting turned off unloads the slot. An unload of the same model during
+    /// the load (tray, exit, unload-immediately) is honoured: the load's engine
+    /// was refused by the slot generation and is not loaded again.
+    fn settle_live_slot(&self, mut model_id: String, mut generation: u64) {
+        loop {
+            if let Err(e) = self.load_into_live_slot(&model_id, generation) {
                 error!("Failed to load live model '{}': {}", model_id, e);
             }
-        });
+            let reload_requested = self.live.reload_requested.swap(false, Ordering::AcqRel);
+            let settings = get_settings(&self.app_handle);
+            let wanted = settings.live_model.trim();
+            if wanted.is_empty() {
+                self.unload_live_model();
+                return;
+            }
+            if self.live.holds(wanted) || (wanted == model_id && !reload_requested) {
+                return;
+            }
+            info!(
+                "Live model setting changed to '{}' while '{}' loaded; loading it",
+                wanted, model_id
+            );
+            model_id = wanted.to_string();
+            generation = self.live.generation();
+        }
     }
 
     /// Drop the live slot's engine (no-op when empty). A live stream holding
@@ -1202,8 +1277,10 @@ impl TranscriptionManager {
         }
     }
 
-    /// The live load itself; the caller holds the live loading flag.
-    fn load_into_live_slot(&self, model_id: &str) -> Result<()> {
+    /// The live load itself; the caller holds the live loading flag and passes
+    /// the slot generation it recorded when it decided to load (see
+    /// [`LiveSlot::install`]): an unload since then makes this load a no-op.
+    fn load_into_live_slot(&self, model_id: &str, generation: u64) -> Result<()> {
         let load_start = Instant::now();
         info!("Loading live model '{}'", model_id);
         let model_info = self
@@ -1225,8 +1302,14 @@ impl TranscriptionManager {
         let model_path = self.model_manager.get_model_path(model_id)?;
 
         // Free the previous live engine before building the new one (peak
-        // memory), as the main slot does.
-        drop(self.live.clear());
+        // memory), as the main slot does. Not an unload: it keeps `generation`.
+        drop(self.live.evict());
+        if self.live.generation() != generation {
+            return Err(anyhow::anyhow!(
+                "Live slot was unloaded before '{}' loaded",
+                model_id
+            ));
+        }
         let engine = self.build_engine(model_id, &model_info.engine_type, model_path, None)?;
         let supports_streaming = match &engine {
             LoadedEngine::TranscribeCpp(session) => {
@@ -1240,7 +1323,13 @@ impl TranscriptionManager {
                 model_id
             ));
         }
-        drop(self.live.install(model_id, engine));
+        if let Err(refused) = self.live.install(model_id, engine, generation) {
+            drop(refused);
+            return Err(anyhow::anyhow!(
+                "Live slot was unloaded while '{}' loaded; dropping it",
+                model_id
+            ));
+        }
         // Like a main load, reset the idle timer so the watcher doesn't unload
         // a just-loaded model.
         self.touch_activity();
@@ -1946,7 +2035,9 @@ impl TranscriptionManager {
         }
     }
 
-    /// Block until no load into `slot` is in progress.
+    /// Block until no load into `slot` is in progress. A live-slot worker also
+    /// leaves once stop/cancel closed its route: its text would be discarded
+    /// anyway, and while it waits the next recording cannot start a stream.
     fn wait_for_slot_load(&self, slot: StreamSlot) {
         let (is_loading, loading_condvar) = match slot {
             StreamSlot::Main => (&self.is_loading, &self.loading_condvar),
@@ -1954,7 +2045,18 @@ impl TranscriptionManager {
         };
         let mut loading = is_loading.lock().unwrap();
         while *loading {
-            loading = loading_condvar.wait(loading).unwrap();
+            if slot.feeds_after_close() {
+                loading = loading_condvar.wait(loading).unwrap();
+                continue;
+            }
+            if !self.router.is_open() {
+                debug!("{}: stream closed while the model loaded", slot.log_label());
+                return;
+            }
+            loading = loading_condvar
+                .wait_timeout(loading, LIVE_LOAD_WAIT_POLL_INTERVAL)
+                .unwrap()
+                .0;
         }
     }
 
@@ -3727,11 +3829,20 @@ mod tests {
         assert!(matches!(reply_rx.recv(), Ok(None)));
     }
 
+    /// Install `engine` as a load that saw no unload would; returns the engine
+    /// it replaced.
+    fn install_now<E>(slot: &LiveSlot<E>, model_id: &str, engine: E) -> Option<E> {
+        match slot.install(model_id, engine, slot.generation()) {
+            Ok(replaced) => replaced,
+            Err(_) => panic!("an install at the current generation must succeed"),
+        }
+    }
+
     #[test]
     fn live_slot_takes_back_a_leased_engine_only_for_the_same_model() {
         let slot = LiveSlot::new();
         assert!(!slot.is_loaded());
-        assert!(slot.install("nemotron", "engine-a").is_none());
+        assert!(install_now(&slot, "nemotron", "engine-a").is_none());
         assert!(slot.holds("nemotron"));
         assert!(!slot.holds("whisper"));
 
@@ -3752,27 +3863,68 @@ mod tests {
         assert_eq!(slot.model_id(), None);
 
         // Switched to another model mid-stream: stale as well.
-        slot.install("nemotron", "engine-a");
+        install_now(&slot, "nemotron", "engine-a");
         let engine = slot.take_engine().unwrap();
-        slot.install("whisper", "engine-b");
+        install_now(&slot, "whisper", "engine-b");
         assert_eq!(slot.return_engine(engine, "nemotron"), Some("engine-a"));
         assert!(slot.holds("whisper"));
 
         // Same model reloaded mid-stream: the fresh engine wins.
         let engine = slot.take_engine().unwrap();
-        slot.install("whisper", "engine-c");
+        install_now(&slot, "whisper", "engine-c");
         assert_eq!(slot.return_engine(engine, "whisper"), Some("engine-b"));
         assert_eq!(slot.take_engine(), Some("engine-c"));
 
         // A worker that panicked dropped the engine and its guard cleared the
         // lease: the id is still recorded, but no model is loaded any more.
-        slot.install("whisper", "engine-d");
+        install_now(&slot, "whisper", "engine-d");
         slot.lease.store(9, Ordering::Release);
         assert!(slot.take_engine().is_some());
         slot.lease.store(0, Ordering::Release);
         assert_eq!(slot.model_id().as_deref(), Some("whisper"));
         assert_eq!(slot.loaded_model_id(), None);
         assert!(!slot.holds("whisper"));
+    }
+
+    /// An unload during a load wins: the load's engine is refused, so a tray,
+    /// exit or setting-change unload is never undone by a load finishing late.
+    /// Freeing the old engine at the start of a load is not an unload.
+    #[test]
+    fn live_slot_refuses_a_load_that_an_unload_overtook() {
+        let slot = LiveSlot::new();
+
+        // Unload while the load builds its engine: refused, slot stays empty.
+        let generation = slot.generation();
+        assert_eq!(slot.clear(), None);
+        assert_eq!(
+            slot.install("nemotron", "engine-a", generation),
+            Err("engine-a")
+        );
+        assert!(!slot.is_loaded());
+        assert_eq!(slot.model_id(), None);
+
+        // A load that saw no unload installs.
+        let generation = slot.generation();
+        assert_eq!(slot.install("nemotron", "engine-a", generation), Ok(None));
+        assert!(slot.holds("nemotron"));
+
+        // The next load evicts the old engine first, then installs its own.
+        let generation = slot.generation();
+        assert_eq!(slot.evict(), Some("engine-a"));
+        assert_eq!(slot.generation(), generation);
+        assert_eq!(slot.install("whisper", "engine-b", generation), Ok(None));
+        assert!(slot.holds("whisper"));
+
+        // Unloading the loaded model also invalidates a load recorded before
+        // it, even after a further unload of the empty slot.
+        let generation = slot.generation();
+        assert_eq!(slot.clear(), Some("engine-b"));
+        assert_eq!(slot.clear(), None);
+        assert_eq!(
+            slot.install("whisper", "engine-c", generation),
+            Err("engine-c")
+        );
+        assert_eq!(slot.loaded_model_id(), None);
     }
 }
 

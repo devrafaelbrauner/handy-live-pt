@@ -12,6 +12,7 @@
 //! path shares with it.
 
 use crate::actions::maybe_convert_chinese_variant;
+use crate::audio_toolkit::vad::{SmoothedVad, VadFrame, VoiceActivityDetector};
 use crate::audio_toolkit::{read_wav_samples, OfflineVad};
 use crate::cli::{CliArgs, VadMode};
 use crate::managers::audio::{build_smoothed_vad, pad_short_recording};
@@ -30,9 +31,6 @@ use tauri_specta::Event;
 
 const SAMPLE_RATE_HZ: u64 = 16_000;
 const SAMPLE_RATE: f64 = SAMPLE_RATE_HZ as f64;
-
-/// Samples per replayed `--live-model` frame: 20 ms at 16 kHz.
-const LIVE_FRAME_SAMPLES: usize = 320;
 
 /// How long to wait for a cancelled live stream's worker to exit before the
 /// next stream may start. It skips the frames still queued and only finishes
@@ -237,6 +235,31 @@ pub(crate) fn run_manifest(app: &AppHandle, args: &CliArgs, manifest: &Path) -> 
             }
         },
     };
+    // The live replay gates frames with its own instance of the same detector:
+    // the final pass's `OfflineVad` owns the other one.
+    let mut live_slot = match args.live_model.as_deref() {
+        None => None,
+        Some(model_id) => {
+            let gate = match backend {
+                None => None,
+                Some(backend) => match build_smoothed_vad(backend, app) {
+                    Ok((detector, offline_hangover_frames, _)) => Some(LiveGate {
+                        detector,
+                        hangover_frames: offline_hangover_frames,
+                    }),
+                    Err(e) => {
+                        eprintln!("error: {}", e);
+                        return 1;
+                    }
+                },
+            };
+            Some(LiveSlot {
+                app,
+                model_id,
+                gate,
+            })
+        }
+    };
 
     let tm = app.state::<Arc<TranscriptionManager>>();
     let model = match load_model(&tm, args, &settings.selected_model) {
@@ -251,10 +274,6 @@ pub(crate) fn run_manifest(app: &AppHandle, args: &CliArgs, manifest: &Path) -> 
             Err(code) => return code,
         },
     };
-    let live_slot = args
-        .live_model
-        .as_deref()
-        .map(|model_id| LiveSlot { app, model_id });
 
     let mut failed = 0usize;
     for entry in &entries {
@@ -264,7 +283,7 @@ pub(crate) fn run_manifest(app: &AppHandle, args: &CliArgs, manifest: &Path) -> 
             args,
             &settings,
             vad.as_mut(),
-            live_slot.as_ref(),
+            live_slot.as_mut(),
             entry,
         );
         let line = match result {
@@ -335,7 +354,7 @@ fn transcribe_entry(
     args: &CliArgs,
     settings: &AppSettings,
     vad: Option<&mut OfflineVad>,
-    live: Option<&LiveSlot>,
+    live: Option<&mut LiveSlot>,
     entry: &ManifestEntry,
 ) -> Result<(serde_json::Value, Option<LiveMeasure>), String> {
     let samples =
@@ -350,8 +369,10 @@ fn transcribe_entry(
     let speech_secs = filtered.as_ref().map_or(samples.len(), Vec::len) as f64 / SAMPLE_RATE;
 
     ensure_loaded(tm, model, args.device_index).map_err(|e| format!("reload failed: {}", e))?;
-    // The live stream hears every microphone frame; VAD only shapes what the
-    // final model gets.
+    // The live stream gets what the recorder's audio callback would feed it
+    // for this clip (every frame with VAD off, the VAD-gated frames
+    // otherwise), while the final model gets the filtered recording below.
+    let live_model = live.as_ref().map(|live| live.model_id);
     let replay = live
         .map(|live| replay_live(tm, live, &samples))
         .transpose()?;
@@ -375,8 +396,7 @@ fn transcribe_entry(
         entry,
         &detail,
         &timings,
-        live.zip(live_measure.as_ref())
-            .map(|(live, measure)| (live.model_id, measure)),
+        live_model.zip(live_measure.as_ref()),
     );
     Ok((line, live_measure))
 }
@@ -448,11 +468,20 @@ fn utterance_line(
     line
 }
 
-/// The live slot a `--live-model` run replays every utterance through, and the
-/// app handle its [`StreamTextEvent`]s are observed on.
+/// The live slot a `--live-model` run replays every utterance through, the
+/// app handle its [`StreamTextEvent`]s are observed on, and the VAD gate the
+/// recorder would apply to the frames it feeds (`None` with `--vad off`).
 struct LiveSlot<'a> {
     app: &'a AppHandle,
     model_id: &'a str,
+    gate: Option<LiveGate>,
+}
+
+/// The recorder's VAD as the dual live path runs it: the `--vad` backend's
+/// smoothed detector with the offline hangover (`VadPolicy::Offline`).
+struct LiveGate {
+    detector: SmoothedVad,
+    hangover_frames: usize,
 }
 
 /// What `--live-model` measured for one utterance.
@@ -549,55 +578,115 @@ fn wait_for_stream_worker(tm: &TranscriptionManager) -> Result<(), String> {
     Ok(())
 }
 
-/// One replayed microphone frame: samples `start..end` of the clip, fed `due`
-/// after the replay start, when its last sample would have been captured.
-struct ReplayFrame {
-    start: usize,
-    end: usize,
+/// Capture frame size of the recorder without a VAD detector (30 ms;
+/// `CaptureProcessor::new` in `audio_toolkit/audio/recorder.rs`), which is
+/// also the frame size of Silero, the default backend. `--vad off` replays at
+/// this size.
+const UNGATED_FRAME_SAMPLES: usize = 480;
+
+/// When the sample just before `sample_index` is captured, from the start of
+/// the recording.
+fn capture_due(sample_index: usize) -> Duration {
+    Duration::from_nanos(sample_index as u64 * 1_000_000_000 / SAMPLE_RATE_HZ)
+}
+
+/// One live-stream feed: what the recorder's audio callback hands
+/// `StreamRouter::feed` for one captured frame, `due` after the replay start.
+struct LiveFeed {
+    samples: Vec<f32>,
     due: Duration,
 }
 
-/// The 1x replay schedule of a `sample_count`-sample clip: 20 ms frames, the
-/// last one shorter when the clip is not a whole number of frames. Due times
-/// are offsets from one start instant, so sleep overshoot never accumulates.
-fn replay_schedule(sample_count: usize) -> impl Iterator<Item = ReplayFrame> {
-    (0..sample_count)
-        .step_by(LIVE_FRAME_SAMPLES)
-        .map(move |start| {
-            let end = (start + LIVE_FRAME_SAMPLES).min(sample_count);
-            ReplayFrame {
-                start,
-                end,
-                due: Duration::from_nanos(end as u64 * 1_000_000_000 / SAMPLE_RATE_HZ),
-            }
-        })
+/// What the recorder's audio callback would feed the live stream while
+/// recording `samples`, and when. Mirrors the private capture loop of
+/// `audio_toolkit/audio/recorder.rs`, which a 16 kHz clip cannot be run
+/// through with a per-frame callback from here (`OfflineVad` only returns the
+/// concatenated output, which these feeds add up to):
+///
+/// - `CaptureProcessor::begin_recording`: with a gate (`VadPolicy::Offline`)
+///   the detector gets the offline hangover and is reset;
+/// - `FrameResampler` (16 kHz in and out, so a pass-through): detector-sized
+///   frames, and at stop `finish` pads the trailing partial frame with zeros;
+/// - `handle_frame`: without a gate (`VadPolicy::Disabled`) every frame is fed;
+///   with one, only `VadFrame::Speech` output is (several frames at once when
+///   the smoothing releases its pre-roll at onset), a detector error passes the
+///   frame through, and `Noise`/`SegmentEnd` feed nothing.
+///
+/// Each feed is due when its frame is captured: the end of the frame, or the
+/// end of the clip for the padded tail, which the recorder only frames at stop.
+fn live_feeds(samples: &[f32], gate: Option<&mut LiveGate>) -> Vec<LiveFeed> {
+    let mut detector: Option<&mut dyn VoiceActivityDetector> = gate.map(|gate| {
+        gate.detector.set_hangover_frames(gate.hangover_frames);
+        gate.detector.reset();
+        &mut gate.detector as &mut dyn VoiceActivityDetector
+    });
+    let frame_samples = detector
+        .as_ref()
+        .map_or(UNGATED_FRAME_SAMPLES, |detector| detector.frame_samples());
+
+    let mut feeds = Vec::new();
+    let mut frame = Vec::with_capacity(frame_samples);
+    for start in (0..samples.len()).step_by(frame_samples) {
+        let end = (start + frame_samples).min(samples.len());
+        frame.clear();
+        frame.extend_from_slice(&samples[start..end]);
+        frame.resize(frame_samples, 0.0);
+        let due = capture_due(end);
+        match detector.as_deref_mut() {
+            None => feeds.push(LiveFeed {
+                samples: frame.clone(),
+                due,
+            }),
+            Some(detector) => match detector
+                .push_frame(frame.as_slice())
+                .unwrap_or(VadFrame::Speech(frame.as_slice()))
+            {
+                VadFrame::Speech(buf) => feeds.push(LiveFeed {
+                    samples: buf.to_vec(),
+                    due,
+                }),
+                VadFrame::Noise | VadFrame::SegmentEnd => {}
+            },
+        }
+    }
+    feeds
+}
+
+/// Sleep until `deadline`; return at once when it has passed.
+fn sleep_until(deadline: Instant) {
+    let now = Instant::now();
+    if deadline > now {
+        std::thread::sleep(deadline - now);
+    }
 }
 
 /// Replay `samples` through the live slot at 1x real time, as the microphone
-/// feeds a recording: start the live stream, feed 20 ms frames paced against
-/// one monotonic start instant, then at release (end of audio) cancel the
-/// stream, as the app does before its final pass: live text is never the final
-/// text. The listener stays attached until [`LiveReplay::finish`].
+/// feeds a recording: start the live stream, feed what the recorder would
+/// (see [`live_feeds`]), each at its capture time measured from one monotonic
+/// start instant so sleep overshoot never accumulates, then at release (end of
+/// audio) cancel the stream, as the app does before its final pass: live text
+/// is never the final text. The listener stays attached until
+/// [`LiveReplay::finish`].
 fn replay_live(
     tm: &TranscriptionManager,
-    live: &LiveSlot,
+    live: &mut LiveSlot,
     samples: &[f32],
 ) -> Result<LiveReplay, String> {
     wait_for_stream_worker(tm)?;
     ensure_live_loaded(tm, live.model_id).map_err(|e| format!("live reload failed: {}", e))?;
+    // Gate decisions do not depend on timing, so they are made up front.
+    let feeds = live_feeds(samples, live.gate.as_mut());
 
     let listener = LiveListener::attach(live.app);
     let router = tm.stream_router();
     tm.start_live_stream();
     let replay_start = Instant::now();
-    for frame in replay_schedule(samples.len()) {
-        let due = replay_start + frame.due;
-        let now = Instant::now();
-        if due > now {
-            std::thread::sleep(due - now);
-        }
-        router.feed(&samples[frame.start..frame.end]);
+    for feed in &feeds {
+        sleep_until(replay_start + feed.due);
+        router.feed(&feed.samples);
     }
+    // The key is held until the clip ends, even when VAD fed nothing late.
+    sleep_until(replay_start + capture_due(samples.len()));
     let release = Instant::now();
     let seen = listener.close();
     tm.cancel_stream();
@@ -732,9 +821,10 @@ impl LiveListener {
 #[cfg(test)]
 mod tests {
     use super::{
-        median_ms, parse_manifest, replay_schedule, utterance_line, LiveMeasure, LiveObservation,
-        LiveTotals, ManifestEntry, UtteranceTimings,
+        live_feeds, median_ms, parse_manifest, utterance_line, LiveFeed, LiveGate, LiveMeasure,
+        LiveObservation, LiveTotals, ManifestEntry, UtteranceTimings,
     };
+    use crate::audio_toolkit::vad::{SmoothedVad, VadFrame, VoiceActivityDetector};
     use crate::cli::CliArgs;
     use crate::managers::transcription::TranscriptionDetail;
     use clap::error::ErrorKind;
@@ -742,6 +832,34 @@ mod tests {
     use serde_json::json;
     use std::path::{Path, PathBuf};
     use std::time::{Duration, Instant};
+
+    /// Inner VAD for the gate tests, on 4-sample frames: voice when a frame
+    /// starts at 0.5 or more, an error when it starts with NaN.
+    struct LevelVad;
+
+    impl VoiceActivityDetector for LevelVad {
+        fn push_frame<'a>(&'a mut self, frame: &'a [f32]) -> anyhow::Result<VadFrame<'a>> {
+            if frame[0].is_nan() {
+                anyhow::bail!("NaN frame");
+            }
+            Ok(if frame[0] >= 0.5 {
+                VadFrame::Speech(frame)
+            } else {
+                VadFrame::Noise
+            })
+        }
+
+        fn frame_samples(&self) -> usize {
+            4
+        }
+    }
+
+    fn fed(feeds: &[LiveFeed]) -> Vec<(Vec<f32>, Duration)> {
+        feeds
+            .iter()
+            .map(|feed| (feed.samples.clone(), feed.due))
+            .collect()
+    }
 
     #[test]
     fn manifest_resolves_audio_against_its_directory_and_defaults_ids() {
@@ -799,33 +917,72 @@ mod tests {
     }
 
     #[test]
-    fn replay_schedule_feeds_20ms_frames_once_captured() {
-        let frames: Vec<_> = replay_schedule(700)
-            .map(|frame| (frame.start, frame.end, frame.due))
-            .collect();
+    fn ungated_replay_feeds_every_recorder_frame_once_captured() {
+        let clip: Vec<f32> = (1..=1000).map(|i| i as f32).collect();
+        let feeds = live_feeds(&clip, None);
+
+        // 30 ms recorder frames; the short tail is zero-padded and due when
+        // the clip ends.
+        let mut tail = clip[960..].to_vec();
+        tail.resize(480, 0.0);
         assert_eq!(
-            frames,
+            fed(&feeds),
             [
-                (0, 320, Duration::from_millis(20)),
-                (320, 640, Duration::from_millis(40)),
-                // The short last frame is due when the clip ends.
-                (640, 700, Duration::from_micros(43_750)),
+                (clip[..480].to_vec(), Duration::from_millis(30)),
+                (clip[480..960].to_vec(), Duration::from_millis(60)),
+                (tail, Duration::from_micros(62_500)),
             ]
         );
-        assert_eq!(replay_schedule(0).count(), 0);
-        let last = replay_schedule(640)
-            .last()
-            .map(|frame| (frame.end, frame.due));
-        assert_eq!(last, Some((640, Duration::from_millis(40))));
+        assert!(live_feeds(&[], None).is_empty());
 
         // Due times come from the sample position, not from summing frame
-        // lengths: a minute of audio is fed contiguously and ends at 60 s.
-        let frames: Vec<_> = replay_schedule(60 * 16_000).collect();
-        assert_eq!(frames.len(), 3_000);
-        assert!(frames
-            .windows(2)
-            .all(|pair| pair[0].end == pair[1].start && pair[0].due < pair[1].due));
-        assert_eq!(frames[2_999].due, Duration::from_secs(60));
+        // lengths: a minute of audio is fed in order and ends at 60 s.
+        let feeds = live_feeds(&vec![0.0; 60 * 16_000], None);
+        assert_eq!(feeds.len(), 2_000);
+        assert!(feeds.iter().all(|feed| feed.samples.len() == 480));
+        assert!(feeds.windows(2).all(|pair| pair[0].due < pair[1].due));
+        assert_eq!(feeds[1_999].due, Duration::from_secs(60));
+    }
+
+    #[test]
+    fn gated_replay_feeds_only_what_the_recorder_vad_lets_through() {
+        // Prefill 1 frame, hangover 5 (replaced by the offline 1 below), onset
+        // 2 frames.
+        let mut gate = LiveGate {
+            detector: SmoothedVad::new(Box::new(LevelVad), 1, 5, 2),
+            hangover_frames: 1,
+        };
+        // Leave the detector mid-speech, as a previous clip would: without the
+        // reset, the first silent frame below would still be fed as hangover.
+        assert!(!gate.detector.push_frame(&[0.9; 4]).unwrap().is_speech());
+        assert!(gate.detector.push_frame(&[0.9; 4]).unwrap().is_speech());
+
+        let levels: [f32; 7] = [0.0, 0.2, 0.9, 0.8, 0.3, 0.1, 0.0];
+        let mut clip: Vec<f32> = levels.iter().flat_map(|&level| [level; 4]).collect();
+        // A 2-sample tail, zero-padded: onset not reached, so not fed.
+        clip.extend([0.7, 0.7]);
+
+        let feeds = live_feeds(&clip, Some(&mut gate));
+        assert_eq!(
+            fed(&feeds),
+            [
+                // Onset on the 2nd voiced frame releases it with its pre-roll,
+                // due when that frame is captured (16 samples = 1 ms).
+                (
+                    vec![0.9, 0.9, 0.9, 0.9, 0.8, 0.8, 0.8, 0.8],
+                    Duration::from_millis(1),
+                ),
+                // One frame of offline hangover; the next one ends the
+                // segment, and silence feeds nothing.
+                (vec![0.3; 4], Duration::from_micros(1_250)),
+            ]
+        );
+
+        // A detector error passes the frame through, as in the recorder.
+        let feeds = live_feeds(&[f32::NAN; 4], Some(&mut gate));
+        assert_eq!(feeds.len(), 1);
+        assert!(feeds[0].samples.iter().all(|sample| sample.is_nan()));
+        assert_eq!(feeds[0].due, Duration::from_micros(250));
     }
 
     #[test]
@@ -851,7 +1008,7 @@ mod tests {
                     "--live-model",
                     "nemotron",
                 ],
-                ErrorKind::MissingRequiredArgument,
+                ErrorKind::ArgumentConflict,
             ),
             (
                 &["handy", "--manifest", "m.jsonl", "--live-model", ""],
