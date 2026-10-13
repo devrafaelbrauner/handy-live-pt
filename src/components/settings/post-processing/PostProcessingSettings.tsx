@@ -152,7 +152,9 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
   const [draftText, setDraftText] = useState("");
 
   const prompts = getSetting("post_process_prompts") || [];
-  const selectedPromptId = getSetting("post_process_selected_prompt_id") || "";
+  // With none selected, the backend uses the first prompt; show that one.
+  const selectedPromptId =
+    getSetting("post_process_selected_prompt_id") || prompts[0]?.id || "";
   const selectedPrompt =
     prompts.find((prompt) => prompt.id === selectedPromptId) || null;
 

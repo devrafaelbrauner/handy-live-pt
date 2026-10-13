@@ -71,6 +71,13 @@ ainda não publicou release.
   `com.apple.security.cs.disable-library-validation`; o hardened runtime
   continua ligado e uma guarda de inicialização roda `handy --help`.
 
+### Fixed
+
+- Pós-processamento por LLM era pulado em silêncio quando nenhum prompt estava
+  selecionado, o estado de uma instalação nova (#18): agora usa o prompt
+  selecionado ou, sem seleção, o primeiro ("Improve Transcriptions"), e a tela
+  de configurações mostra o prompt em uso.
+
 ### Removed
 
 - `bundle.windows.signCommand` (Azure Trusted Signing do upstream) do

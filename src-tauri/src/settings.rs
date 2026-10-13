@@ -1128,6 +1128,16 @@ impl AppSettings {
             .find(|provider| provider.id == provider_id)
     }
 
+    /// The post-processing prompt in effect: the selected one, or the first
+    /// prompt when none is selected (fresh installs select none) or the
+    /// selected one no longer exists. `None` only when there are no prompts.
+    pub fn active_post_process_prompt(&self) -> Option<&LLMPrompt> {
+        self.post_process_selected_prompt_id
+            .as_ref()
+            .and_then(|id| self.post_process_prompts.iter().find(|p| &p.id == id))
+            .or_else(|| self.post_process_prompts.first())
+    }
+
     pub fn post_process_provider_mut(
         &mut self,
         provider_id: &str,
@@ -1380,6 +1390,29 @@ mod tests {
 
     fn default_settings_json() -> serde_json::Value {
         serde_json::to_value(get_default_settings()).unwrap()
+    }
+
+    #[test]
+    fn post_processing_uses_the_selected_prompt_or_falls_back_to_the_first() {
+        let prompt = |id: &str| LLMPrompt {
+            id: id.to_string(),
+            name: id.to_string(),
+            prompt: format!("prompt {id}"),
+        };
+        let mut settings = AppSettings {
+            post_process_prompts: vec![prompt("first"), prompt("second")],
+            post_process_selected_prompt_id: None,
+            ..Default::default()
+        };
+        let active = |s: &AppSettings| s.active_post_process_prompt().map(|p| p.id.clone());
+
+        assert_eq!(active(&settings).as_deref(), Some("first"));
+        settings.post_process_selected_prompt_id = Some("second".to_string());
+        assert_eq!(active(&settings).as_deref(), Some("second"));
+        settings.post_process_selected_prompt_id = Some("deleted".to_string());
+        assert_eq!(active(&settings).as_deref(), Some("first"));
+        settings.post_process_prompts.clear();
+        assert_eq!(active(&settings), None);
     }
 
     /// Every field must survive a partial store: a missing key must never fail
