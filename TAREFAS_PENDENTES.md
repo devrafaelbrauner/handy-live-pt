@@ -21,7 +21,8 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
       Silero vs Earshot, com FLEURS pt_br (200 falas), 20–30 falas próprias e
       20 sondas de silêncio. Ferramentas prontas (#15): `scripts/f0a_fleurs.py`,
       `scripts/corpus_f0b.py export` e `scripts/f0a_metrics.py --baseline`;
-      falta rodar no Mac.
+      falta rodar (no Windows, `handy.exe` com `--out` via `Start-Process -Wait`,
+      #17).
 
 ### F0b — Corpus pessoal (alta; depende de você)
 
@@ -147,4 +148,5 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
       corpus F0b do histórico e comparação com IC 95% por bootstrap pareado
       (#15).
 - [x] 2026-10-12 — F0a: trace de latência por gravação no log do app (#16).
-      Falta ler as linhas `Latency trace` de gravações reais no Mac.
+      Falta ler as linhas `Latency trace` de gravações reais (Windows:
+      `%LOCALAPPDATA%\com.rafael.handylive\logs\handy.log`).
