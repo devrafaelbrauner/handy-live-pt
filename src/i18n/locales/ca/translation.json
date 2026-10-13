@@ -12,6 +12,7 @@
   "sidebar": {
     "general": "General",
     "models": "Models",
+    "cloud": "API al núvol",
     "advanced": "Avançat",
     "postProcessing": "Postprocessament",
     "history": "Historial",
@@ -144,6 +145,8 @@
     "downloadSpeed": "{{speed}} MB/s",
     "cancel": "Cancel·la",
     "cancelDownload": "Cancel·la la baixada",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "La transcripció al núvol està activada",
     "capabilities": {
       "languageSelection": "Admet diverses llengües d'entrada",
       "singleLanguage": "Només admet aquesta llengua",
@@ -157,6 +160,39 @@
   "settings": {
     "modelSettings": {
       "title": "Configuració de {{model}}"
+    },
+    "cloud": {
+      "transcription": {
+        "title": "Transcripció al núvol",
+        "enabled": {
+          "label": "Utilitza la transcripció al núvol",
+          "description": "Envia cada enregistrament al proveïdor següent en lloc de transcriure'l en aquest ordinador. Cal connexió a internet, i l'àudio surt d'aquest dispositiu."
+        },
+        "provider": {
+          "title": "Proveïdor",
+          "description": "Servei que transcriu els enregistraments. Totes les opcions utilitzen l'API de transcripció d'OpenAI.",
+          "custom": "Personalitzat (compatible amb OpenAI)"
+        },
+        "baseUrl": {
+          "title": "URL de base",
+          "description": "Adreça del servidor compatible amb OpenAI. Els enregistraments s'envien a aquesta adreça seguida de /audio/transcriptions.",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "Clau de l'API",
+          "description": "Només es desa a la configuració de Handy en aquest ordinador. El postprocessament utilitza la mateixa clau per a aquest proveïdor.",
+          "placeholder": "Enganxeu la clau de l'API",
+          "getKey": "Obteniu una clau de l'API"
+        },
+        "model": {
+          "title": "Model",
+          "description": "Model de veu a text utilitzat per a cada enregistrament. Actualitzeu per veure els models que ofereix aquest proveïdor.",
+          "placeholderWithOptions": "Cerqueu o seleccioneu un model",
+          "placeholderNoOptions": "Escriviu el nom d'un model",
+          "refreshModels": "Actualitzeu els models"
+        },
+        "missingApiKey": "Afegiu la clau de l'API de {{provider}} per transcriure al núvol."
+      }
     },
     "general": {
       "title": "General",
@@ -212,6 +248,7 @@
     "models": {
       "title": "Models de transcripció",
       "description": "Seleccioneu un model de transcripció o baixeu-ne més. Els models ofereixen diferents nivells de precisió i velocitat.",
+      "cloudActive": "La transcripció al núvol està activada, de manera que no s'utilitzen els models locals. Desactiveu-la a API al núvol per transcriure en aquest ordinador.",
       "searchPlaceholder": "Cerqueu models pel nom…",
       "yourModels": "Models baixats",
       "availableModels": "Disponibles per baixar",

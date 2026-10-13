@@ -81,13 +81,17 @@ pub async fn retry_history_entry_transcription(
         return Err("Recording has no audio samples".to_string());
     }
 
-    transcription_manager.initiate_model_load();
-
-    let tm = Arc::clone(&transcription_manager);
-    let transcription = tauri::async_runtime::spawn_blocking(move || tm.transcribe(samples))
-        .await
-        .map_err(|e| format!("Transcription task panicked: {}", e))?
-        .map_err(|e| e.to_string())?;
+    let settings = crate::settings::get_settings(&app);
+    let transcription = if settings.cloud_transcription_enabled {
+        crate::cloud_transcription::transcribe(&settings, &samples).await?
+    } else {
+        transcription_manager.initiate_model_load();
+        let tm = Arc::clone(&transcription_manager);
+        tauri::async_runtime::spawn_blocking(move || tm.transcribe(samples))
+            .await
+            .map_err(|e| format!("Transcription task panicked: {}", e))?
+            .map_err(|e| e.to_string())?
+    };
 
     if transcription.is_empty() {
         return Err("Recording contains no speech".to_string());

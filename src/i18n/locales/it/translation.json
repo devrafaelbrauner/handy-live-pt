@@ -12,6 +12,7 @@
   "sidebar": {
     "general": "Generale",
     "models": "Modelli",
+    "cloud": "API cloud",
     "advanced": "Avanzate",
     "postProcessing": "Post-Elaborazione",
     "history": "Cronologia",
@@ -152,15 +153,51 @@
     },
     "cancel": "Annulla",
     "cancelDownload": "Annulla download",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "La trascrizione cloud è attiva",
     "legacy": "Obsoleto"
   },
   "settings": {
     "modelSettings": {
       "title": "Impostazioni di {{model}}"
     },
+    "cloud": {
+      "transcription": {
+        "title": "Trascrizione cloud",
+        "enabled": {
+          "label": "Usa la trascrizione cloud",
+          "description": "Invia ogni registrazione al provider qui sotto invece di trascriverla su questo computer. Richiede una connessione a internet e l'audio lascia questo dispositivo."
+        },
+        "provider": {
+          "title": "Provider",
+          "description": "Servizio che trascrive le tue registrazioni. Tutte le opzioni usano l'API di trascrizione di OpenAI.",
+          "custom": "Personalizzato (compatibile con OpenAI)"
+        },
+        "baseUrl": {
+          "title": "URL Base",
+          "description": "Indirizzo del tuo server compatibile con OpenAI. Le registrazioni vengono inviate a questo indirizzo seguito da /audio/transcriptions.",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "Chiave API",
+          "description": "Salvata solo nelle impostazioni di Handy su questo computer. La post-elaborazione usa la stessa chiave per questo provider.",
+          "placeholder": "Incolla la tua chiave API",
+          "getKey": "Ottieni una chiave API"
+        },
+        "model": {
+          "title": "Modello",
+          "description": "Modello di riconoscimento vocale usato per ogni registrazione. Aggiorna per elencare i modelli offerti da questo provider.",
+          "placeholderWithOptions": "Cerca o scegli un modello",
+          "placeholderNoOptions": "Digita il nome di un modello",
+          "refreshModels": "Aggiorna modelli"
+        },
+        "missingApiKey": "Aggiungi la tua chiave API di {{provider}} per trascrivere nel cloud."
+      }
+    },
     "models": {
       "title": "Modelli di Trascrizione",
       "description": "Seleziona un modello di trascrizione o scarica modelli aggiuntivi. Diversi modelli offrono diversi livelli di accuratezza e velocità.",
+      "cloudActive": "La trascrizione cloud è attiva, quindi i modelli locali non vengono usati. Disattivala in API cloud per trascrivere su questo computer.",
       "deleteConfirm": "Sei sicuro di voler eliminare {{modelName}}? Dovrai scaricarlo di nuovo per usarlo.",
       "deleteActiveConfirm": "{{modelName}} è il tuo modello attivo. Eliminarlo interromperà le trascrizioni fino a quando non selezionerai un nuovo modello. Sei sicuro?",
       "deleteTitle": "Elimina modello",

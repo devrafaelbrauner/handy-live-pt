@@ -12,6 +12,7 @@
   "sidebar": {
     "general": "כללי",
     "models": "מודלים",
+    "cloud": "API בענן",
     "advanced": "מתקדם",
     "postProcessing": "עיבוד משלים",
     "history": "היסטוריה",
@@ -143,6 +144,8 @@
     "downloadSpeed": "{{speed}} MB/s",
     "cancel": "ביטול",
     "cancelDownload": "בטל הורדה",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "תמלול בענן פעיל",
     "capabilities": {
       "languageSelection": "תומך בכמה שפות קלט",
       "singleLanguage": "תומך רק בשפה הזו",
@@ -157,6 +160,39 @@
   "settings": {
     "modelSettings": {
       "title": "הגדרות עבור {{model}}"
+    },
+    "cloud": {
+      "transcription": {
+        "title": "תמלול בענן",
+        "enabled": {
+          "label": "השתמש בתמלול בענן",
+          "description": "שלח כל הקלטה לספק שלמטה במקום לתמלל אותה במחשב זה. נדרש חיבור לאינטרנט, והאודיו שלך יוצא מהמכשיר."
+        },
+        "provider": {
+          "title": "ספק",
+          "description": "השירות שמתמלל את ההקלטות שלך. כל האפשרויות משתמשות ב-API התמלול של OpenAI.",
+          "custom": "מותאם אישית (תואם OpenAI)"
+        },
+        "baseUrl": {
+          "title": "כתובת URL בסיסית",
+          "description": "הכתובת של השרת התואם ל-OpenAI שלך. ההקלטות נשלחות לכתובת זו ואחריה /audio/transcriptions.",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "מפתח API",
+          "description": "נשמר רק בהגדרות של Handy במחשב זה. העיבוד המשלים משתמש באותו מפתח עבור ספק זה.",
+          "placeholder": "הדבק את מפתח ה-API שלך",
+          "getKey": "קבל מפתח API"
+        },
+        "model": {
+          "title": "מודל",
+          "description": "מודל המרת דיבור לטקסט שמשמש לכל הקלטה. רענן כדי להציג את המודלים שהספק מציע.",
+          "placeholderWithOptions": "חפש או בחר מודל",
+          "placeholderNoOptions": "הקלד שם מודל",
+          "refreshModels": "רענן מודלים"
+        },
+        "missingApiKey": "הוסף את מפתח ה-API של {{provider}} כדי לתמלל בענן."
+      }
     },
     "general": {
       "title": "כללי",
@@ -212,6 +248,7 @@
     "models": {
       "title": "מודלי תמלול",
       "description": "בחר מודל תמלול או הורד מודלים נוספים. מודלים שונים מציעים רמות שונות של דיוק ומהירות.",
+      "cloudActive": "תמלול בענן פעיל, ולכן לא נעשה שימוש במודלים מקומיים. כבה אותו ב-API בענן כדי לתמלל במחשב זה.",
       "yourModels": "מודלים שהורדו",
       "availableModels": "זמינים להורדה",
       "deleteConfirm": "האם למחוק את {{modelName}}? יהיה צורך להוריד אותו שוב כדי להשתמש בו.",

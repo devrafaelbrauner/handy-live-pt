@@ -12,6 +12,7 @@
   "sidebar": {
     "general": "Algemeen",
     "models": "Modellen",
+    "cloud": "Cloud-API",
     "advanced": "Geavanceerd",
     "postProcessing": "Naverwerking",
     "history": "Geschiedenis",
@@ -144,6 +145,8 @@
     "downloadSpeed": "{{speed}} MB/s",
     "cancel": "Annuleren",
     "cancelDownload": "Download annuleren",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "Cloudtranscriptie staat aan",
     "capabilities": {
       "languageSelection": "Ondersteunt meerdere invoertalen",
       "singleLanguage": "Ondersteunt alleen deze taal",
@@ -157,6 +160,39 @@
   "settings": {
     "modelSettings": {
       "title": "Instellingen voor {{model}}"
+    },
+    "cloud": {
+      "transcription": {
+        "title": "Cloudtranscriptie",
+        "enabled": {
+          "label": "Cloudtranscriptie gebruiken",
+          "description": "Stuur elke opname naar de provider hieronder in plaats van deze op deze computer te transcriberen. Vereist een internetverbinding, en je audio verlaat dit apparaat."
+        },
+        "provider": {
+          "title": "Provider",
+          "description": "Dienst die je opnames transcribeert. Elke optie gebruikt de OpenAI-transcriptie-API.",
+          "custom": "Aangepast (OpenAI-compatibel)"
+        },
+        "baseUrl": {
+          "title": "Basis-URL",
+          "description": "Adres van je OpenAI-compatibele server. Opnames worden naar dit adres gevolgd door /audio/transcriptions gestuurd.",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "API-sleutel",
+          "description": "Alleen opgeslagen in de instellingen van Handy op deze computer. Naverwerking gebruikt dezelfde sleutel voor deze provider.",
+          "placeholder": "Plak je API-sleutel",
+          "getKey": "API-sleutel aanvragen"
+        },
+        "model": {
+          "title": "Model",
+          "description": "Spraak-naar-tekstmodel dat voor elke opname wordt gebruikt. Ververs om de modellen van deze provider te tonen.",
+          "placeholderWithOptions": "Zoek of selecteer een model",
+          "placeholderNoOptions": "Typ een modelnaam",
+          "refreshModels": "Modellen verversen"
+        },
+        "missingApiKey": "Voeg je {{provider}}-API-sleutel toe om in de cloud te transcriberen."
+      }
     },
     "general": {
       "title": "Algemeen",
@@ -212,6 +248,7 @@
     "models": {
       "title": "Transcriptiemodellen",
       "description": "Selecteer een transcriptiemodel of download extra modellen. Verschillende modellen bieden variërende niveaus van nauwkeurigheid en snelheid.",
+      "cloudActive": "Cloudtranscriptie staat aan, dus lokale modellen worden niet gebruikt. Zet het uit in Cloud-API om op deze computer te transcriberen.",
       "searchPlaceholder": "Modellen zoeken op naam...",
       "yourModels": "Gedownloade modellen",
       "availableModels": "Beschikbaar voor download",

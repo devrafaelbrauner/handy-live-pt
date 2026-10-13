@@ -10,6 +10,8 @@ import {
   Search,
 } from "lucide-react";
 import type { ModelCardStatus } from "@/components/onboarding";
+import { Alert } from "@/components/ui/Alert";
+import { useSettings } from "@/hooks/useSettings";
 import { ModelCard } from "@/components/onboarding";
 import { useModelStore } from "@/stores/modelStore";
 import {
@@ -57,6 +59,9 @@ export const ModelsSettings: React.FC = () => {
     deleteModel,
     rescanLocalModels,
   } = useModelStore();
+  const { getSetting } = useSettings();
+  const cloudTranscriptionEnabled =
+    getSetting("cloud_transcription_enabled") ?? false;
 
   // click outside handler for language dropdown
   useEffect(() => {
@@ -247,6 +252,10 @@ export const ModelsSettings: React.FC = () => {
           {t("settings.models.description")}
         </p>
       </div>
+
+      {cloudTranscriptionEnabled && (
+        <Alert variant="info">{t("settings.models.cloudActive")}</Alert>
+      )}
 
       {/* Search bar — filter the catalog by name or description */}
       <div className="relative">

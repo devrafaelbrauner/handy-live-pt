@@ -12,6 +12,7 @@
   "sidebar": {
     "general": "General",
     "models": "Models",
+    "cloud": "Cloud API",
     "advanced": "Advanced",
     "postProcessing": "Post Process",
     "history": "History",
@@ -144,6 +145,8 @@
     "downloadSpeed": "{{speed}} MB/s",
     "cancel": "Cancel",
     "cancelDownload": "Cancel download",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "Cloud transcription is on",
     "capabilities": {
       "languageSelection": "Supports multiple input languages",
       "singleLanguage": "Supports this language only",
@@ -157,6 +160,39 @@
   "settings": {
     "modelSettings": {
       "title": "{{model}} Settings"
+    },
+    "cloud": {
+      "transcription": {
+        "title": "Cloud Transcription",
+        "enabled": {
+          "label": "Use cloud transcription",
+          "description": "Send each recording to the provider below instead of transcribing it on this computer. Requires an internet connection, and your audio leaves this device."
+        },
+        "provider": {
+          "title": "Provider",
+          "description": "Service that transcribes your recordings. Every option uses the OpenAI transcription API.",
+          "custom": "Custom (OpenAI-compatible)"
+        },
+        "baseUrl": {
+          "title": "Base URL",
+          "description": "Address of your OpenAI-compatible server. Recordings are sent to this address followed by /audio/transcriptions.",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "API Key",
+          "description": "Stored only in Handy's settings on this computer. Post-processing uses the same key for this provider.",
+          "placeholder": "Paste your API key",
+          "getKey": "Get an API key"
+        },
+        "model": {
+          "title": "Model",
+          "description": "Speech-to-text model used for every recording. Refresh to list the models this provider offers.",
+          "placeholderWithOptions": "Search or select a model",
+          "placeholderNoOptions": "Type a model name",
+          "refreshModels": "Refresh models"
+        },
+        "missingApiKey": "Add your {{provider}} API key to transcribe in the cloud."
+      }
     },
     "general": {
       "title": "General",
@@ -212,6 +248,7 @@
     "models": {
       "title": "Transcription Models",
       "description": "Select a transcription model or download additional models. Different models offer varying levels of accuracy and speed.",
+      "cloudActive": "Cloud transcription is on, so local models are not used. Turn it off in Cloud API to transcribe on this computer.",
       "searchPlaceholder": "Search models by name…",
       "yourModels": "Downloaded Models",
       "availableModels": "Available to Download",

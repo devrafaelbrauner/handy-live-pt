@@ -11,6 +11,10 @@ use transcribe_cpp::{ParakeetBufferedStreamOptions, ParakeetStreamOptions, Strea
 
 pub const APPLE_INTELLIGENCE_PROVIDER_ID: &str = "apple_intelligence";
 pub const APPLE_INTELLIGENCE_DEFAULT_MODEL_ID: &str = "Apple Intelligence";
+/// Cloud transcription provider for any self-hosted or third-party server that
+/// speaks the OpenAI transcription API. Kept distinct from the post-processing
+/// `custom` provider so the two custom endpoints never share a URL or key.
+pub const CLOUD_TRANSCRIPTION_CUSTOM_PROVIDER_ID: &str = "custom_transcription";
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "lowercase")]
@@ -106,6 +110,18 @@ pub struct PostProcessProvider {
     pub models_endpoint: Option<String>,
     #[serde(default)]
     pub supports_structured_output: bool,
+}
+
+/// A cloud speech-to-text service reached through an OpenAI-compatible
+/// `POST {base_url}/audio/transcriptions` endpoint. API keys are not stored
+/// here: they live in `AppSettings::post_process_api_keys`, keyed by `id`.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
+pub struct CloudTranscriptionProvider {
+    pub id: String,
+    pub label: String,
+    pub base_url: String,
+    #[serde(default)]
+    pub allow_base_url_edit: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
@@ -571,6 +587,9 @@ pub struct AppSettings {
     pub post_process_provider_id: String,
     #[serde(default = "default_post_process_providers")]
     pub post_process_providers: Vec<PostProcessProvider>,
+    /// API keys keyed by provider id. Shared by post-processing and cloud
+    /// transcription: a provider both features offer (OpenAI, OpenRouter,
+    /// Groq) has exactly one key, entered once.
     #[serde(default = "default_post_process_api_keys")]
     pub post_process_api_keys: SecretMap,
     #[serde(default = "default_post_process_models")]
@@ -644,6 +663,18 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    /// Send finished recordings to a cloud speech-to-text provider instead of
+    /// the local model. Off by default: audio never leaves the device unless
+    /// the user opts in.
+    #[serde(default)]
+    pub cloud_transcription_enabled: bool,
+    #[serde(default = "default_cloud_transcription_provider_id")]
+    pub cloud_transcription_provider_id: String,
+    #[serde(default = "default_cloud_transcription_providers")]
+    pub cloud_transcription_providers: Vec<CloudTranscriptionProvider>,
+    /// Selected model per cloud transcription provider id.
+    #[serde(default = "default_cloud_transcription_models")]
+    pub cloud_transcription_models: HashMap<String, String>,
 }
 
 fn default_model() -> String {
@@ -987,6 +1018,117 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
     changed
 }
 
+fn default_cloud_transcription_provider_id() -> String {
+    "openai".to_string()
+}
+
+fn default_cloud_transcription_providers() -> Vec<CloudTranscriptionProvider> {
+    vec![
+        CloudTranscriptionProvider {
+            id: "openai".to_string(),
+            label: "OpenAI".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
+            allow_base_url_edit: false,
+        },
+        CloudTranscriptionProvider {
+            id: "openrouter".to_string(),
+            label: "OpenRouter".to_string(),
+            base_url: "https://openrouter.ai/api/v1".to_string(),
+            allow_base_url_edit: false,
+        },
+        CloudTranscriptionProvider {
+            id: "groq".to_string(),
+            label: "Groq".to_string(),
+            base_url: "https://api.groq.com/openai/v1".to_string(),
+            allow_base_url_edit: false,
+        },
+        CloudTranscriptionProvider {
+            id: CLOUD_TRANSCRIPTION_CUSTOM_PROVIDER_ID.to_string(),
+            label: "Custom (OpenAI-compatible)".to_string(),
+            base_url: "http://localhost:8000/v1".to_string(),
+            allow_base_url_edit: true,
+        },
+    ]
+}
+
+fn default_cloud_transcription_model(provider_id: &str) -> String {
+    match provider_id {
+        "openai" => "gpt-transcribe",
+        "openrouter" => "openai/gpt-transcribe",
+        "groq" => "whisper-large-v3-turbo",
+        CLOUD_TRANSCRIPTION_CUSTOM_PROVIDER_ID => "whisper-1",
+        _ => "",
+    }
+    .to_string()
+}
+
+fn default_cloud_transcription_models() -> HashMap<String, String> {
+    default_cloud_transcription_providers()
+        .into_iter()
+        .map(|provider| {
+            let model = default_cloud_transcription_model(&provider.id);
+            (provider.id, model)
+        })
+        .collect()
+}
+
+/// Keep the cloud transcription providers in sync with this build: providers
+/// added since the store was written are appended, fixed endpoints follow the
+/// built-in URL, a missing or blank model falls back to the provider default,
+/// and an unknown selection falls back to the default provider. A base URL the
+/// user may edit (the custom endpoint) is never overwritten.
+fn ensure_cloud_transcription_defaults(settings: &mut AppSettings) -> bool {
+    let mut changed = false;
+    for provider in default_cloud_transcription_providers() {
+        match settings
+            .cloud_transcription_providers
+            .iter_mut()
+            .find(|existing| existing.id == provider.id)
+        {
+            Some(existing) => {
+                let base_url = if provider.allow_base_url_edit {
+                    existing.base_url.clone()
+                } else {
+                    provider.base_url.clone()
+                };
+                let synced = CloudTranscriptionProvider {
+                    base_url,
+                    ..provider.clone()
+                };
+                if *existing != synced {
+                    *existing = synced;
+                    changed = true;
+                }
+            }
+            None => {
+                settings
+                    .cloud_transcription_providers
+                    .push(provider.clone());
+                changed = true;
+            }
+        }
+
+        let model = settings
+            .cloud_transcription_models
+            .entry(provider.id.clone())
+            .or_default();
+        if model.trim().is_empty() {
+            *model = default_cloud_transcription_model(&provider.id);
+            changed = true;
+        }
+    }
+
+    if settings
+        .cloud_transcription_provider(&settings.cloud_transcription_provider_id)
+        .is_none()
+    {
+        settings.cloud_transcription_provider_id = default_cloud_transcription_provider_id();
+        changed = true;
+    }
+
+    changed
+}
+
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
 
 pub fn get_default_settings() -> AppSettings {
@@ -1106,6 +1248,10 @@ pub fn get_default_settings() -> AppSettings {
         vad_enabled: default_vad_enabled(),
         vad_backend: VadBackend::default(),
         overlay_style: default_overlay_style(),
+        cloud_transcription_enabled: false,
+        cloud_transcription_provider_id: default_cloud_transcription_provider_id(),
+        cloud_transcription_providers: default_cloud_transcription_providers(),
+        cloud_transcription_models: default_cloud_transcription_models(),
     }
 }
 
@@ -1143,6 +1289,24 @@ impl AppSettings {
         provider_id: &str,
     ) -> Option<&mut PostProcessProvider> {
         self.post_process_providers
+            .iter_mut()
+            .find(|provider| provider.id == provider_id)
+    }
+
+    pub fn cloud_transcription_provider(
+        &self,
+        provider_id: &str,
+    ) -> Option<&CloudTranscriptionProvider> {
+        self.cloud_transcription_providers
+            .iter()
+            .find(|provider| provider.id == provider_id)
+    }
+
+    pub fn cloud_transcription_provider_mut(
+        &mut self,
+        provider_id: &str,
+    ) -> Option<&mut CloudTranscriptionProvider> {
+        self.cloud_transcription_providers
             .iter_mut()
             .find(|provider| provider.id == provider_id)
     }
@@ -1198,7 +1362,9 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         default_settings
     };
 
-    if ensure_post_process_defaults(&mut settings) {
+    let post_process_changed = ensure_post_process_defaults(&mut settings);
+    let cloud_changed = ensure_cloud_transcription_defaults(&mut settings);
+    if post_process_changed || cloud_changed {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
 
@@ -2025,5 +2191,93 @@ mod tests {
             LiveMode::ChunksPaste.wants_batch_preview(),
             LiveMode::Preview.wants_batch_preview()
         );
+    }
+
+    /// Cloud transcription is opt-in: neither a fresh install nor a store
+    /// written before the feature existed may send audio off the device.
+    #[test]
+    fn cloud_transcription_is_off_until_enabled() {
+        let upgraded: AppSettings = serde_json::from_value(serde_json::json!({}))
+            .expect("a store missing the cloud keys must fall back to defaults");
+        assert!(!upgraded.cloud_transcription_enabled);
+        assert!(!get_default_settings().cloud_transcription_enabled);
+
+        // The default selection must point at a provider that actually exists.
+        assert!(upgraded
+            .cloud_transcription_provider(&upgraded.cloud_transcription_provider_id)
+            .is_some());
+    }
+
+    #[test]
+    fn cloud_defaults_sync_repairs_providers_and_keeps_custom_url() {
+        let mut settings = get_default_settings();
+        // A store from an older build: Groq missing, OpenAI on a stale URL,
+        // the custom endpoint pointed at the user's own server, one model
+        // blanked and the selection naming a provider that no longer exists.
+        settings
+            .cloud_transcription_providers
+            .retain(|provider| provider.id != "groq");
+        settings
+            .cloud_transcription_provider_mut("openai")
+            .unwrap()
+            .base_url = "https://stale.example/v1".to_string();
+        settings
+            .cloud_transcription_provider_mut(CLOUD_TRANSCRIPTION_CUSTOM_PROVIDER_ID)
+            .unwrap()
+            .base_url = "http://192.168.0.10:9000/v1".to_string();
+        settings
+            .cloud_transcription_models
+            .insert("openrouter".to_string(), "  ".to_string());
+        settings.cloud_transcription_models.remove("groq");
+        settings.cloud_transcription_provider_id = "retired".to_string();
+
+        assert!(ensure_cloud_transcription_defaults(&mut settings));
+
+        assert_eq!(
+            settings
+                .cloud_transcription_provider("groq")
+                .map(|p| p.base_url.as_str()),
+            Some("https://api.groq.com/openai/v1")
+        );
+        assert_eq!(
+            settings
+                .cloud_transcription_provider("openai")
+                .map(|p| p.base_url.as_str()),
+            Some("https://api.openai.com/v1")
+        );
+        assert_eq!(
+            settings
+                .cloud_transcription_provider(CLOUD_TRANSCRIPTION_CUSTOM_PROVIDER_ID)
+                .map(|p| p.base_url.as_str()),
+            Some("http://192.168.0.10:9000/v1")
+        );
+        assert_eq!(
+            settings.cloud_transcription_models["openrouter"],
+            "openai/gpt-transcribe"
+        );
+        assert_eq!(
+            settings.cloud_transcription_models["groq"],
+            "whisper-large-v3-turbo"
+        );
+        assert_eq!(settings.cloud_transcription_provider_id, "openai");
+
+        // Converged: a second pass has nothing left to write.
+        assert!(!ensure_cloud_transcription_defaults(&mut settings));
+    }
+
+    #[test]
+    fn cloud_defaults_sync_keeps_user_models() {
+        let mut settings = get_default_settings();
+        settings
+            .cloud_transcription_models
+            .insert("openai".to_string(), "gpt-4o-mini-transcribe".to_string());
+        settings.cloud_transcription_provider_id = "groq".to_string();
+
+        assert!(!ensure_cloud_transcription_defaults(&mut settings));
+        assert_eq!(
+            settings.cloud_transcription_models["openai"],
+            "gpt-4o-mini-transcribe"
+        );
+        assert_eq!(settings.cloud_transcription_provider_id, "groq");
     }
 }

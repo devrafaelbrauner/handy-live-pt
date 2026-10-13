@@ -12,6 +12,7 @@
   "sidebar": {
     "general": "Generelt",
     "models": "Modeller",
+    "cloud": "Cloud-API",
     "advanced": "Avanceret",
     "postProcessing": "Efterbehandling",
     "history": "Historik",
@@ -144,6 +145,8 @@
     "downloadSpeed": "{{speed}} MB/s",
     "cancel": "Annuller",
     "cancelDownload": "Annuller download",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "Cloud-transskription er slået til",
     "capabilities": {
       "languageSelection": "Understøtter flere inputsprog",
       "singleLanguage": "Understøtter kun dette sprog",
@@ -157,6 +160,39 @@
   "settings": {
     "modelSettings": {
       "title": "{{model}}-indstillinger"
+    },
+    "cloud": {
+      "transcription": {
+        "title": "Cloud-transskription",
+        "enabled": {
+          "label": "Brug cloud-transskription",
+          "description": "Send hver optagelse til udbyderen nedenfor i stedet for at transskribere den på denne computer. Kræver internetforbindelse, og din lyd forlader denne enhed."
+        },
+        "provider": {
+          "title": "Udbyder",
+          "description": "Tjeneste, der transskriberer dine optagelser. Alle muligheder bruger OpenAI's transskriptions-API.",
+          "custom": "Brugerdefineret (OpenAI-kompatibel)"
+        },
+        "baseUrl": {
+          "title": "Basis-URL",
+          "description": "Adressen på din OpenAI-kompatible server. Optagelser sendes til denne adresse efterfulgt af /audio/transcriptions.",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "API-nøgle",
+          "description": "Gemmes kun i Handys indstillinger på denne computer. Efterbehandling bruger samme nøgle for denne udbyder.",
+          "placeholder": "Indsæt din API-nøgle",
+          "getKey": "Hent en API-nøgle"
+        },
+        "model": {
+          "title": "Model",
+          "description": "Tale-til-tekst-model, der bruges til alle optagelser. Opdater for at se de modeller, denne udbyder tilbyder.",
+          "placeholderWithOptions": "Søg eller vælg en model",
+          "placeholderNoOptions": "Skriv et modelnavn",
+          "refreshModels": "Opdater modeller"
+        },
+        "missingApiKey": "Tilføj din {{provider}}-API-nøgle for at transskribere i skyen."
+      }
     },
     "general": {
       "title": "Generelt",
@@ -212,6 +248,7 @@
     "models": {
       "title": "Transskriptionsmodeller",
       "description": "Vælg en transskriptionsmodel, eller download flere modeller. Forskellige modeller tilbyder varierende niveauer af nøjagtighed og hastighed.",
+      "cloudActive": "Cloud-transskription er slået til, så lokale modeller bruges ikke. Slå den fra under Cloud-API for at transskribere på denne computer.",
       "searchPlaceholder": "Søg efter modeller ved navn…",
       "yourModels": "Downloadede modeller",
       "availableModels": "Tilgængelig til download",

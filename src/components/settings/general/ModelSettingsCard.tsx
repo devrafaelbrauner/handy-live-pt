@@ -4,6 +4,8 @@ import { SettingsGroup } from "../../ui/SettingsGroup";
 import { LanguageSelector } from "../LanguageSelector";
 import { TranslateToEnglish } from "../TranslateToEnglish";
 import { useModelStore } from "../../../stores/modelStore";
+import { useSettings } from "../../../hooks/useSettings";
+import { activeCloudModelName } from "../cloud/cloudProviders";
 import type { ModelInfo } from "@/bindings";
 import {
   CHINESE_LANGUAGE_CODE,
@@ -13,6 +15,20 @@ import {
 export const ModelSettingsCard: React.FC = () => {
   const { t } = useTranslation();
   const { currentModel, models } = useModelStore();
+  const { settings } = useSettings();
+
+  // Cloud models are not limited to a published language list: offer every
+  // language plus auto-detect. Translation to English is local-only.
+  const cloudModelName = activeCloudModelName(settings, t);
+  if (cloudModelName) {
+    return (
+      <SettingsGroup
+        title={t("settings.modelSettings.title", { model: cloudModelName })}
+      >
+        <LanguageSelector descriptionMode="tooltip" grouped={true} />
+      </SettingsGroup>
+    );
+  }
 
   const currentModelInfo = models.find((m: ModelInfo) => m.id === currentModel);
 

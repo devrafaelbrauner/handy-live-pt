@@ -12,6 +12,7 @@
   "sidebar": {
     "general": "Genel",
     "models": "Modeller",
+    "cloud": "Bulut API",
     "advanced": "Gelişmiş",
     "postProcessing": "Son İşlem",
     "history": "Geçmiş",
@@ -152,15 +153,51 @@
     },
     "cancel": "İptal",
     "cancelDownload": "İndirmeyi iptal et",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "Bulut transkripsiyonu açık",
     "legacy": "Eski"
   },
   "settings": {
     "modelSettings": {
       "title": "{{model}} Ayarları"
     },
+    "cloud": {
+      "transcription": {
+        "title": "Bulut Transkripsiyonu",
+        "enabled": {
+          "label": "Bulut transkripsiyonunu kullan",
+          "description": "Her kaydı bu bilgisayarda yazıya dökmek yerine aşağıdaki sağlayıcıya gönderin. İnternet bağlantısı gerektirir ve sesiniz bu cihazdan çıkar."
+        },
+        "provider": {
+          "title": "Sağlayıcı",
+          "description": "Kayıtlarınızı yazıya döken hizmet. Tüm seçenekler OpenAI transkripsiyon API'sini kullanır.",
+          "custom": "Özel (OpenAI Uyumlu)"
+        },
+        "baseUrl": {
+          "title": "Temel URL",
+          "description": "OpenAI uyumlu sunucunuzun adresi. Kayıtlar bu adrese /audio/transcriptions eklenerek gönderilir.",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "API Anahtarı",
+          "description": "Yalnızca bu bilgisayardaki Handy ayarlarında saklanır. Son işlem bu sağlayıcı için aynı anahtarı kullanır.",
+          "placeholder": "API anahtarınızı yapıştırın",
+          "getKey": "API anahtarı al"
+        },
+        "model": {
+          "title": "Model",
+          "description": "Her kayıt için kullanılan konuşmadan metne modeli. Bu sağlayıcının sunduğu modelleri listelemek için yenileyin.",
+          "placeholderWithOptions": "Model ara veya seç",
+          "placeholderNoOptions": "Model adı yazın",
+          "refreshModels": "Modelleri Yenile"
+        },
+        "missingApiKey": "Bulutta yazıya dökmek için {{provider}} API anahtarınızı ekleyin."
+      }
+    },
     "models": {
       "title": "Transkripsiyon Modelleri",
       "description": "Bir transkripsiyon modeli seçin veya ek modeller indirin. Farklı modeller değişen doğruluk ve hız seviyeleri sunar.",
+      "cloudActive": "Bulut transkripsiyonu açık, bu nedenle yerel modeller kullanılmıyor. Bu bilgisayarda yazıya dökmek için Bulut API bölümünden kapatın.",
       "deleteConfirm": "{{modelName}} modelini silmek istediğinizden emin misiniz? Kullanmak için tekrar indirmeniz gerekecek.",
       "deleteActiveConfirm": "{{modelName}} aktif modelinizdir. Silmek, yeni bir model seçene kadar transkripsiyonları durduracaktır. Emin misiniz?",
       "deleteTitle": "Modeli Sil",

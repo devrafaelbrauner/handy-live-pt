@@ -12,6 +12,7 @@
   "sidebar": {
     "general": "Obecné",
     "models": "Modely",
+    "cloud": "Cloud API",
     "advanced": "Pokročilé",
     "postProcessing": "Následné zpracování",
     "history": "Historie",
@@ -152,15 +153,51 @@
     },
     "cancel": "Zrušit",
     "cancelDownload": "Zrušit stahování",
+    "cloud": "{{provider}} · {{model}}",
+    "cloudTitle": "Cloudový přepis je zapnutý",
     "legacy": "Zastaralé"
   },
   "settings": {
     "modelSettings": {
       "title": "Nastavení {{model}}"
     },
+    "cloud": {
+      "transcription": {
+        "title": "Cloudový přepis",
+        "enabled": {
+          "label": "Použít cloudový přepis",
+          "description": "Odesílat každou nahrávku níže uvedenému poskytovateli místo přepisu na tomto počítači. Vyžaduje připojení k internetu a váš zvuk opustí toto zařízení."
+        },
+        "provider": {
+          "title": "Poskytovatel",
+          "description": "Služba, která přepisuje vaše nahrávky. Všechny možnosti používají přepisové API OpenAI.",
+          "custom": "Vlastní (kompatibilní s OpenAI)"
+        },
+        "baseUrl": {
+          "title": "Základní URL",
+          "description": "Adresa vašeho serveru kompatibilního s OpenAI. Nahrávky se odesílají na tuto adresu následovanou /audio/transcriptions.",
+          "placeholder": "http://localhost:8000/v1"
+        },
+        "apiKey": {
+          "title": "API klíč",
+          "description": "Uloženo pouze v nastavení Handy na tomto počítači. Následné zpracování používá pro tohoto poskytovatele stejný klíč.",
+          "placeholder": "Vložte svůj API klíč",
+          "getKey": "Získat API klíč"
+        },
+        "model": {
+          "title": "Model",
+          "description": "Model převodu řeči na text použitý pro každou nahrávku. Obnovením zobrazíte modely tohoto poskytovatele.",
+          "placeholderWithOptions": "Vyhledejte nebo vyberte model",
+          "placeholderNoOptions": "Zadejte název modelu",
+          "refreshModels": "Obnovit modely"
+        },
+        "missingApiKey": "Pro přepis v cloudu přidejte svůj API klíč pro {{provider}}."
+      }
+    },
     "models": {
       "title": "Modely přepisu",
       "description": "Vyberte model přepisu nebo stáhněte další modely. Různé modely nabízejí různé úrovně přesnosti a rychlosti.",
+      "cloudActive": "Cloudový přepis je zapnutý, takže se lokální modely nepoužívají. Pro přepis na tomto počítači jej vypněte v sekci Cloud API.",
       "deleteConfirm": "Opravdu chcete smazat {{modelName}}? Pro opětovné použití jej budete muset znovu stáhnout.",
       "deleteActiveConfirm": "{{modelName}} je váš aktivní model. Jeho smazáním se zastaví přepisy, dokud nevyberete nový model. Opravdu chcete pokračovat?",
       "deleteTitle": "Smazat model",

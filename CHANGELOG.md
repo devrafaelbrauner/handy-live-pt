@@ -56,6 +56,12 @@ ainda não publicou release.
   captura o stdout dele (rodar com `Start-Process -Wait`);
   `scripts/corpus_f0b.py` lê o histórico do sistema em uso (`%APPDATA%` no
   Windows) em vez do caminho do macOS.
+- Transcrição na nuvem (porta do `handy-live-pt-cloud#1`): seção "API na
+  Nuvem" nas configurações, desligada por padrão, com OpenAI, OpenRouter, Groq
+  ou endpoint compatível com OpenAI (`POST {base}/audio/transcriptions`, WAV
+  16 kHz mono, divisão em partes acima de 5 min). As chaves são as mesmas do
+  pós-processamento. Com a nuvem ligada, o modelo local não é carregado e não
+  há texto ao vivo; o harness e o `--transcribe-file` continuam locais.
 
 ### Changed
 
