@@ -330,6 +330,12 @@
           "chunksPaste": "Abschnitte einfügen (demnächst)"
         }
       },
+      "liveModel": {
+        "label": "Live-Modell",
+        "description": "Streaming-Modell, das beim Sprechen Live-Text anzeigt, wenn das Transkriptionsmodell (lokal oder in der Cloud) keinen eigenen hat. Dieser Text wird verworfen: Der eingefügte Text stammt immer vom Transkriptionsmodell. Benötigt mehr Speicher, da beide Modelle geladen bleiben.",
+        "off": "Aus",
+        "none": "Kein heruntergeladenes Modell unterstützt Live-Streaming"
+      },
       "acceleration": {
         "transcribe": {
           "title": "Whisper-Beschleunigung",

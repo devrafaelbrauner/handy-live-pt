@@ -1297,6 +1297,43 @@ pub fn change_live_mode_setting(app: AppHandle, mode: LiveMode) -> Result<(), St
     Ok(())
 }
 
+/// Choose the live model: a natively streaming model whose disposable live
+/// text shows while the transcription model (local or cloud) has none of its
+/// own. `""` turns it off. Otherwise the model must be downloaded and stream
+/// natively; it is then loaded into the live slot in the background.
+#[tauri::command]
+#[specta::specta]
+pub fn change_live_model_setting(app: AppHandle, model_id: String) -> Result<(), String> {
+    use crate::managers::model::{EngineType, ModelManager};
+    use crate::managers::transcription::TranscriptionManager;
+    use std::sync::Arc;
+
+    let model_id = model_id.trim().to_string();
+    if !model_id.is_empty() {
+        let Some(info) = app.state::<Arc<ModelManager>>().get_model_info(&model_id) else {
+            return Err(format!("Unknown model: {}", model_id));
+        };
+        if !info.is_downloaded {
+            return Err(format!("{} is not downloaded", info.name));
+        }
+        if !matches!(info.engine_type, EngineType::TranscribeCpp) || !info.supports_streaming {
+            return Err(format!("{} does not support live streaming", info.name));
+        }
+    }
+
+    let mut settings = settings::get_settings(&app);
+    settings.live_model = model_id.clone();
+    settings::write_settings(&app, settings);
+
+    // Swap the live slot right away; the new model loads in the background.
+    let tm = app.state::<Arc<TranscriptionManager>>();
+    tm.unload_live_model();
+    if !model_id.is_empty() {
+        tm.initiate_live_model_load();
+    }
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_vad_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {

@@ -22,6 +22,7 @@ use log::{debug, error, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Manager;
@@ -59,6 +60,19 @@ pub trait ShortcutAction: Send + Sync {
 // Transcribe Action
 struct TranscribeAction {
     post_process: bool,
+    /// Whether the recording in flight planned [`LivePath::Dual`]: set by
+    /// `start`, read by `stop` to cancel the live stream instead of
+    /// finalizing it.
+    dual_live: AtomicBool,
+}
+
+impl TranscribeAction {
+    fn new(post_process: bool) -> Self {
+        Self {
+            post_process,
+            dual_live: AtomicBool::new(false),
+        }
+    }
 }
 
 /// Field name for structured output JSON schema
@@ -146,53 +160,118 @@ fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool
     style == OverlayStyle::Live && is_streaming
 }
 
+/// Where a recording's live text comes from, as named in its latency trace
+/// line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LivePath {
+    /// The final model is local and streams natively: its own stream shows the
+    /// live text (and, when it finalizes, also the final text).
+    Native,
+    /// The live model streams disposable live text on the live slot; the final
+    /// model (local or cloud) transcribes the whole recording on stop.
+    Dual,
+    /// Batch live preview of the local final model at each speech pause.
+    /// `ChunksPaste` currently behaves like `Preview`, so both read "preview".
+    Preview,
+    /// No live text.
+    Off,
+}
+
+impl LivePath {
+    /// Name printed in the latency trace line.
+    fn trace_label(self) -> &'static str {
+        match self {
+            LivePath::Native => "native",
+            LivePath::Dual => "dual",
+            LivePath::Preview => "preview",
+            LivePath::Off => "off",
+        }
+    }
+}
+
 /// Pre-recording live-text decision for one recording.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct LiveStartPlan {
-    /// Spawn the stream worker (native streaming, or the batch live preview).
-    use_live_worker: bool,
+    path: LivePath,
     /// Route completed VAD speech segments to the worker (batch live preview).
-    /// Never set for natively streaming models or with VAD disabled, since no
-    /// segments would be consumed/produced.
+    /// Only set for [`LivePath::Preview`] with VAD enabled, since no segments
+    /// would be consumed/produced otherwise.
     preview_segments: bool,
     vad_policy: VadPolicy,
 }
 
-/// Decide whether to spawn a live worker and which VAD profile to record with.
+/// Decide where live text comes from and which VAD profile to record with.
+/// First match wins:
 ///
-/// With [`LiveMode::Standard`] this is exactly the historical behaviour: only
-/// streaming-capable models spawn a worker. Any other live mode also spawns
-/// one for batch models (chunked preview), but keeps the offline VAD profile —
-/// the preview must not change what gets recorded.
+/// 1. The final model is local and streams natively: [`LivePath::Native`]
+///    with the streaming VAD profile; the live model is ignored.
+/// 2. The live model is usable (see [`live_model_usable`]): [`LivePath::Dual`]
+///    with the offline profile, so the recording is exactly what the final
+///    model would get without a live model.
+/// 3. A local batch final model with a non-standard [`LiveMode`]:
+///    [`LivePath::Preview`], also with the offline profile — the preview must
+///    not change what gets recorded.
+/// 4. Otherwise [`LivePath::Off`]. With [`LiveMode::Standard`] and no live
+///    model this is exactly the historical batch behaviour.
+///
+/// Cloud transcription runs once on the finished recording, so it never
+/// streams natively and gets no batch preview. With VAD disabled every path
+/// records with [`VadPolicy::Disabled`].
 fn live_start_plan(
     vad_enabled: bool,
-    model_supports_streaming: bool,
+    use_cloud: bool,
+    final_model_streams: bool,
+    live_model_usable: bool,
     live_mode: LiveMode,
 ) -> LiveStartPlan {
+    let path = if !use_cloud && final_model_streams {
+        LivePath::Native
+    } else if live_model_usable {
+        LivePath::Dual
+    } else if !use_cloud && live_mode.wants_batch_preview() {
+        LivePath::Preview
+    } else {
+        LivePath::Off
+    };
     let vad_policy = if !vad_enabled {
         VadPolicy::Disabled
-    } else if model_supports_streaming {
+    } else if path == LivePath::Native {
         VadPolicy::Streaming
     } else {
         VadPolicy::Offline
     };
     LiveStartPlan {
-        use_live_worker: model_supports_streaming || live_mode.wants_batch_preview(),
-        preview_segments: live_mode.wants_batch_preview()
-            && !model_supports_streaming
-            && vad_enabled,
+        path,
+        preview_segments: path == LivePath::Preview && vad_enabled,
         vad_policy,
     }
 }
 
-/// Live-text path a recording planned, as named in its latency trace line.
-/// `ChunksPaste` currently behaves like `Preview`, so both read "preview".
-fn live_trace_label(use_live_worker: bool, model_supports_streaming: bool) -> &'static str {
-    match (use_live_worker, model_supports_streaming) {
-        (false, _) => "off",
-        (true, true) => "native",
-        (true, false) => "preview",
+/// Whether the live model can give this recording live text: it is set, it is
+/// downloaded and streams natively (`live_model_streams`), and it is not the
+/// final model itself — unless the cloud produces the final text.
+fn live_model_usable(
+    live_model: &str,
+    selected_model: &str,
+    use_cloud: bool,
+    live_model_streams: bool,
+) -> bool {
+    !live_model.is_empty() && live_model_streams && (use_cloud || live_model != selected_model)
+}
+
+/// Model named in the latency trace line: `cloud:<provider>/<model>` when the
+/// cloud produces the final text, else the selected local model.
+fn trace_model(settings: &AppSettings) -> String {
+    if !settings.cloud_transcription_enabled {
+        return settings.selected_model.clone();
     }
+    let provider = &settings.cloud_transcription_provider_id;
+    let model = settings
+        .cloud_transcription_models
+        .get(provider)
+        .map(|model| model.trim())
+        .unwrap_or_default();
+    format!("cloud:{}/{}", provider, model)
 }
 
 async fn post_process_transcription(settings: &AppSettings, transcription: &str) -> Option<String> {
@@ -561,37 +640,44 @@ impl ShortcutAction for TranscribeAction {
         let plan_started = Instant::now();
         let is_always_on = settings.always_on_microphone;
 
-        let selected_model_info = app
-            .state::<Arc<ModelManager>>()
-            .get_model_info(&settings.selected_model);
-
         // Use the app-facing model capability as the single pre-recording source
         // for live streaming decisions. Unknown support is represented as false
         // until the model registry is updated by discovery or runtime load.
-        // Cloud transcription runs once on the finished recording: it never
-        // streams and gets no live preview.
-        let model_supports_streaming = !use_cloud
-            && selected_model_info
-                .as_ref()
-                .map(|m| m.supports_streaming)
-                .unwrap_or(false);
-        let live_mode = if use_cloud {
-            LiveMode::Standard
-        } else {
-            settings.live_mode
-        };
-        let LiveStartPlan {
-            use_live_worker,
-            preview_segments,
-            vad_policy,
-        } = live_start_plan(settings.vad_enabled, model_supports_streaming, live_mode);
-        trace.describe(
+        let model_manager = app.state::<Arc<ModelManager>>();
+        let final_model_streams = model_manager
+            .get_model_info(&settings.selected_model)
+            .is_some_and(|m| m.supports_streaming);
+        let live_model = settings.live_model.trim();
+        let live_model_streams = model_manager
+            .get_model_info(live_model)
+            .is_some_and(|m| m.is_downloaded && m.supports_streaming);
+        let live_usable = live_model_usable(
+            live_model,
             &settings.selected_model,
-            live_trace_label(use_live_worker, model_supports_streaming),
+            use_cloud,
+            live_model_streams,
         );
-        if use_live_worker {
-            tm.start_stream(preview_segments);
+        let plan = live_start_plan(
+            settings.vad_enabled,
+            use_cloud,
+            final_model_streams,
+            live_usable,
+            settings.live_mode,
+        );
+        trace.describe(&trace_model(&settings), plan.path.trace_label());
+        match plan.path {
+            LivePath::Native | LivePath::Preview => tm.start_stream(plan.preview_segments),
+            LivePath::Dual => {
+                // Loads the live model in the background (a no-op once it is
+                // in the live slot); the live worker waits for that load.
+                tm.initiate_live_model_load();
+                tm.start_live_stream();
+            }
+            LivePath::Off => {}
         }
+        self.dual_live
+            .store(plan.path == LivePath::Dual, Ordering::Release);
+        let use_live_worker = plan.path != LivePath::Off;
         let plan_elapsed = plan_started.elapsed();
 
         // Sizing the overlay follows the same live-worker decision. A recording
@@ -619,7 +705,7 @@ impl ShortcutAction for TranscribeAction {
 
         let mut recording_error: Option<String> = None;
         let recording_start_time = Instant::now();
-        match rm.try_start_recording(&binding_id, vad_policy) {
+        match rm.try_start_recording(&binding_id, plan.vad_policy) {
             Ok(readiness) => {
                 debug!(
                     "Recording request accepted in {:?}; waiting for first microphone samples",
@@ -753,6 +839,7 @@ impl ShortcutAction for TranscribeAction {
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
         let cancel_generation = rm.cancel_generation();
+        let dual_live = self.dual_live.load(Ordering::Acquire);
 
         tauri::async_runtime::spawn(async move {
             let _guard = FinishGuard(ah.clone());
@@ -797,26 +884,45 @@ impl ShortcutAction for TranscribeAction {
                         crate::audio_toolkit::save_wav_file(&wav_path, &samples_for_wav)
                     });
 
-                    // Transcribe concurrently with WAV save. If a live stream was
-                    // running, finalize it and use its text (all audio was already
-                    // fed to the stream); otherwise batch-transcribe the samples.
+                    // Transcribe concurrently with WAV save. On the dual live
+                    // path the live model only previewed: discard its stream
+                    // (its engine goes back to the live slot) and let the final
+                    // model — local or cloud — transcribe the whole recording,
+                    // exactly as without a live model. Otherwise, if a live
+                    // stream was running, finalize it and use its text (all
+                    // audio was already fed to the stream); else batch-transcribe
+                    // the samples.
                     let transcription_time = Instant::now();
-                    let transcription_result = match tm.finalize_stream() {
-                        // A finalized stream with usable text wins. An empty result
-                        // (no active stream, produced nothing, or a finalize error
-                        // after the engine was returned) falls back to a full batch
-                        // transcription of the same audio. A finalize timeout is
-                        // surfaced instead — the worker may still hold the engine,
-                        // so a batch fallback would contend with it.
-                        Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
-                        Ok(_) => {
-                            transcribe_batch(&ah, &tm, samples, || {
-                                rm.was_cancelled_since(cancel_generation)
-                            })
-                            .await
+                    let transcription_result = if dual_live {
+                        tm.cancel_stream();
+                        transcribe_batch(&ah, &tm, samples, || {
+                            rm.was_cancelled_since(cancel_generation)
+                        })
+                        .await
+                    } else {
+                        match tm.finalize_stream() {
+                            // A finalized stream with usable text wins. An empty
+                            // result (no active stream, produced nothing, or a
+                            // finalize error after the engine was returned) falls
+                            // back to a full batch transcription of the same
+                            // audio. A finalize timeout is surfaced instead — the
+                            // worker may still hold the engine, so a batch
+                            // fallback would contend with it.
+                            Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
+                            Ok(_) => {
+                                transcribe_batch(&ah, &tm, samples, || {
+                                    rm.was_cancelled_since(cancel_generation)
+                                })
+                                .await
+                            }
+                            Err(err) => Err(err),
                         }
-                        Err(err) => Err(err),
                     };
+                    if dual_live {
+                        // A cloud final pass never reaches the local model's
+                        // unload-immediately check; run it for the live slot.
+                        tm.maybe_unload_immediately("live transcription");
+                    }
 
                     // Await WAV save and verify
                     let wav_saved = match wav_handle.await {
@@ -1041,13 +1147,11 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     let mut map = HashMap::new();
     map.insert(
         "transcribe".to_string(),
-        Arc::new(TranscribeAction {
-            post_process: false,
-        }) as Arc<dyn ShortcutAction>,
+        Arc::new(TranscribeAction::new(false)) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "transcribe_with_post_process".to_string(),
-        Arc::new(TranscribeAction { post_process: true }) as Arc<dyn ShortcutAction>,
+        Arc::new(TranscribeAction::new(true)) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "cancel".to_string(),
@@ -1063,11 +1167,11 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_unless_cancelled, is_blank_transcription, live_start_plan,
-        should_use_streaming_overlay, strip_think_block, LiveStartPlan,
+        complete_unless_cancelled, is_blank_transcription, live_model_usable, live_start_plan,
+        should_use_streaming_overlay, strip_think_block, trace_model, LivePath, LiveStartPlan,
     };
     use crate::audio_toolkit::VadPolicy;
-    use crate::settings::{LiveMode, OverlayStyle};
+    use crate::settings::{AppSettings, LiveMode, OverlayStyle};
     use std::future;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -1152,14 +1256,72 @@ mod tests {
         assert!(!should_use_streaming_overlay(OverlayStyle::None, false));
     }
 
-    /// Primary acceptance criterion: the default `Standard` live mode must be
-    /// byte-identical to the behaviour before live modes existed — batch
-    /// models spawn no worker and record with the offline VAD profile.
+    /// The precedence table for one input: native, then dual, then preview,
+    /// then off; only native records with the streaming VAD profile.
+    fn assert_plan_precedence(
+        vad: bool,
+        cloud: bool,
+        final_streams: bool,
+        live_usable: bool,
+        mode: LiveMode,
+    ) {
+        let path = match (cloud, final_streams, live_usable, mode) {
+            (false, true, _, _) => LivePath::Native,
+            (_, _, true, _) => LivePath::Dual,
+            (false, _, _, LiveMode::Preview | LiveMode::ChunksPaste) => LivePath::Preview,
+            _ => LivePath::Off,
+        };
+        let vad_policy = match (vad, path) {
+            (false, _) => VadPolicy::Disabled,
+            (true, LivePath::Native) => VadPolicy::Streaming,
+            (true, _) => VadPolicy::Offline,
+        };
+        assert_eq!(
+            live_start_plan(vad, cloud, final_streams, live_usable, mode),
+            LiveStartPlan {
+                path,
+                preview_segments: path == LivePath::Preview && vad,
+                vad_policy,
+            },
+            "vad={vad} cloud={cloud} final_streams={final_streams} live_usable={live_usable} \
+             mode={mode:?}"
+        );
+    }
+
+    /// Every input combination — cloud × final model streams × live model
+    /// usable × live mode × VAD — follows the precedence table.
     #[test]
-    fn standard_live_mode_never_spawns_a_worker_for_batch_models() {
+    fn live_start_plan_follows_the_precedence_for_every_input() {
+        for vad in [true, false] {
+            for cloud in [false, true] {
+                for final_streams in [false, true] {
+                    for live_usable in [false, true] {
+                        for mode in [LiveMode::Standard, LiveMode::Preview] {
+                            assert_plan_precedence(vad, cloud, final_streams, live_usable, mode);
+                        }
+                        // Reserved: plans exactly like `Preview`.
+                        assert_plan_precedence(
+                            vad,
+                            cloud,
+                            final_streams,
+                            live_usable,
+                            LiveMode::ChunksPaste,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Primary acceptance criterion: the default `Standard` live mode without a
+    /// live model must be byte-identical to the behaviour before live modes
+    /// existed — local batch models get no live text, record with the offline
+    /// VAD profile and show the compact pill under a Live overlay style.
+    #[test]
+    fn standard_live_mode_gives_batch_models_no_live_text() {
         for vad_enabled in [true, false] {
-            let plan = live_start_plan(vad_enabled, false, LiveMode::Standard);
-            assert!(!plan.use_live_worker);
+            let plan = live_start_plan(vad_enabled, false, false, false, LiveMode::Standard);
+            assert_eq!(plan.path, LivePath::Off);
             assert!(!plan.preview_segments);
             assert_eq!(
                 plan.vad_policy,
@@ -1169,57 +1331,123 @@ mod tests {
                     VadPolicy::Disabled
                 }
             );
+            assert!(!should_use_streaming_overlay(
+                OverlayStyle::Live,
+                plan.path != LivePath::Off
+            ));
         }
-        // ...and a Live overlay style still shows the compact pill for them.
-        let plan = live_start_plan(true, false, LiveMode::Standard);
-        assert!(!should_use_streaming_overlay(
-            OverlayStyle::Live,
-            plan.use_live_worker
-        ));
+    }
+
+    /// A natively streaming local final model keeps today's path, whatever the
+    /// live model or the live mode say.
+    #[test]
+    fn native_streaming_ignores_the_live_model_and_live_mode() {
+        for live_usable in [false, true] {
+            for mode in [LiveMode::Standard, LiveMode::Preview] {
+                assert_eq!(
+                    live_start_plan(true, false, true, live_usable, mode),
+                    LiveStartPlan {
+                        path: LivePath::Native,
+                        preview_segments: false,
+                        vad_policy: VadPolicy::Streaming,
+                    }
+                );
+                assert_eq!(
+                    live_start_plan(false, false, true, live_usable, mode).vad_policy,
+                    VadPolicy::Disabled
+                );
+            }
+        }
+    }
+
+    /// Dual records exactly what the final model would get alone — offline VAD
+    /// profile, no preview segments — for a cloud or a batch local final model,
+    /// wins over the batch preview, and gets the live overlay.
+    #[test]
+    fn dual_records_what_the_final_model_gets_alone() {
+        for (cloud, final_streams) in [(false, false), (true, false), (true, true)] {
+            for mode in [LiveMode::Standard, LiveMode::Preview] {
+                let plan = live_start_plan(true, cloud, final_streams, true, mode);
+                let alone = live_start_plan(true, cloud, final_streams, false, LiveMode::Standard);
+                assert_eq!(plan.path, LivePath::Dual);
+                assert!(!plan.preview_segments);
+                assert_eq!(plan.vad_policy, VadPolicy::Offline);
+                assert_eq!(plan.vad_policy, alone.vad_policy);
+                assert!(should_use_streaming_overlay(
+                    OverlayStyle::Live,
+                    plan.path != LivePath::Off
+                ));
+            }
+        }
+    }
+
+    /// Cloud transcription runs once on the finished recording: it never
+    /// streams natively and gets no batch preview, so only a live model gives
+    /// it live text.
+    #[test]
+    fn cloud_gets_live_text_only_from_a_live_model() {
+        for final_streams in [false, true] {
+            for mode in [LiveMode::Standard, LiveMode::Preview] {
+                let plan = live_start_plan(true, true, final_streams, false, mode);
+                assert_eq!(plan.path, LivePath::Off);
+                assert!(!plan.preview_segments);
+                assert_eq!(plan.vad_policy, VadPolicy::Offline);
+            }
+        }
     }
 
     #[test]
-    fn standard_live_mode_keeps_native_streaming_unchanged() {
-        assert_eq!(
-            live_start_plan(true, true, LiveMode::Standard),
-            LiveStartPlan {
-                use_live_worker: true,
-                preview_segments: false,
-                vad_policy: VadPolicy::Streaming,
-            }
-        );
-        assert_eq!(
-            live_start_plan(false, true, LiveMode::Standard),
-            LiveStartPlan {
-                use_live_worker: true,
-                preview_segments: false,
-                vad_policy: VadPolicy::Disabled,
-            }
-        );
-    }
-
-    #[test]
-    fn preview_modes_spawn_a_worker_but_keep_the_offline_vad_profile() {
+    fn preview_modes_preview_local_batch_models_without_a_live_model() {
         for mode in [LiveMode::Preview, LiveMode::ChunksPaste] {
             assert_eq!(
-                live_start_plan(true, false, mode),
+                live_start_plan(true, false, false, false, mode),
                 LiveStartPlan {
-                    use_live_worker: true,
+                    path: LivePath::Preview,
                     preview_segments: true,
                     vad_policy: VadPolicy::Offline,
                 }
             );
             // Without VAD there are no segment boundaries to preview.
-            assert!(!live_start_plan(false, false, mode).preview_segments);
-            // Native streaming models are unaffected by the preview mode.
-            assert_eq!(
-                live_start_plan(true, true, mode),
-                live_start_plan(true, true, LiveMode::Standard)
-            );
-            assert!(should_use_streaming_overlay(
-                OverlayStyle::Live,
-                live_start_plan(true, false, mode).use_live_worker
-            ));
+            let plan = live_start_plan(false, false, false, false, mode);
+            assert_eq!(plan.path, LivePath::Preview);
+            assert!(!plan.preview_segments);
+            assert_eq!(plan.vad_policy, VadPolicy::Disabled);
         }
+    }
+
+    #[test]
+    fn live_model_is_usable_only_when_set_streaming_and_not_the_final_model() {
+        assert!(live_model_usable("nemotron", "whisper", false, true));
+        assert!(!live_model_usable("", "whisper", false, true));
+        assert!(!live_model_usable("nemotron", "whisper", false, false));
+        // The selected local model is the final model already...
+        assert!(!live_model_usable("nemotron", "nemotron", false, true));
+        // ...unless the cloud produces the final text.
+        assert!(live_model_usable("nemotron", "nemotron", true, true));
+        assert!(!live_model_usable("", "", true, true));
+    }
+
+    #[test]
+    fn trace_labels_name_every_live_path() {
+        assert_eq!(LivePath::Native.trace_label(), "native");
+        assert_eq!(LivePath::Dual.trace_label(), "dual");
+        assert_eq!(LivePath::Preview.trace_label(), "preview");
+        assert_eq!(LivePath::Off.trace_label(), "off");
+    }
+
+    #[test]
+    fn trace_model_names_the_cloud_provider_and_model_when_cloud_is_on() {
+        let mut settings = AppSettings {
+            selected_model: "whisper-small".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(trace_model(&settings), "whisper-small");
+
+        settings.cloud_transcription_enabled = true;
+        settings.cloud_transcription_provider_id = "groq".to_string();
+        settings
+            .cloud_transcription_models
+            .insert("groq".to_string(), " whisper-large-v3 ".to_string());
+        assert_eq!(trace_model(&settings), "cloud:groq/whisper-large-v3");
     }
 }

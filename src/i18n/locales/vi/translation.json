@@ -330,6 +330,12 @@
           "chunksPaste": "Dán theo từng đoạn (sắp ra mắt)"
         }
       },
+      "liveModel": {
+        "label": "Mô hình trực tiếp",
+        "description": "Mô hình phát trực tuyến hiển thị văn bản trực tiếp khi bạn nói nếu mô hình chép lời (cục bộ hoặc đám mây) không tự có. Văn bản này sẽ bị bỏ: nội dung được dán luôn đến từ mô hình chép lời. Dùng nhiều bộ nhớ hơn vì cả hai mô hình đều được giữ tải.",
+        "off": "Tắt",
+        "none": "Không có mô hình đã tải nào hỗ trợ phát trực tuyến"
+      },
       "acceleration": {
         "transcribe": {
           "title": "Tăng tốc Whisper",

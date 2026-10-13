@@ -330,6 +330,12 @@
           "chunksPaste": "Pegar por fragmentos (próximamente)"
         }
       },
+      "liveModel": {
+        "label": "Modelo en vivo",
+        "description": "Modelo con streaming que muestra texto en vivo mientras hablas cuando el modelo de transcripción (local o en la nube) no tiene el suyo propio. Este texto se descarta: lo que se pega siempre viene del modelo de transcripción. Usa más memoria, porque ambos modelos permanecen cargados.",
+        "off": "Desactivado",
+        "none": "Ningún modelo descargado admite streaming en vivo"
+      },
       "acceleration": {
         "transcribe": {
           "title": "Aceleración de transcribe.cpp",

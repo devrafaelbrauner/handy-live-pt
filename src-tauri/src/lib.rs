@@ -315,6 +315,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                     Ok(()) => log::info!("Model unloaded via tray."),
                     Err(e) => log::error!("Failed to unload model via tray: {}", e),
                 }
+                transcription_manager.unload_live_model();
             }
             "cancel" => {
                 use crate::utils::cancel_current_operation;
@@ -655,6 +656,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_lazy_stream_close_setting,
             shortcut::change_stream_latency_preset_setting,
             shortcut::change_live_mode_setting,
+            shortcut::change_live_model_setting,
             shortcut::change_vad_enabled_setting,
             shortcut::change_vad_backend_setting,
             shortcut::change_filler_word_removal_enabled_setting,
@@ -900,6 +902,7 @@ pub fn run(cli_args: CliArgs) {
                     // are still alive at C++ static-destructor time.
                     if let Some(tm) = handle.try_state::<Arc<TranscriptionManager>>() {
                         let _ = tm.unload_model();
+                        tm.unload_live_model();
                     }
                     // process::exit (not app.exit, which exits 0 regardless) so the
                     // exit code propagates to the shell for CI gating. Flush first
@@ -1085,6 +1088,7 @@ pub fn run(cli_args: CliArgs) {
         tauri::RunEvent::Exit => {
             if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
                 let _ = tm.unload_model();
+                tm.unload_live_model();
             }
         }
         _ => {}

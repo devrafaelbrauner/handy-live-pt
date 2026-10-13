@@ -330,6 +330,12 @@
           "chunksPaste": "Tempel per bagian (segera hadir)"
         }
       },
+      "liveModel": {
+        "label": "Model langsung",
+        "description": "Model streaming yang menampilkan teks langsung saat Anda berbicara ketika model transkripsi (lokal atau cloud) tidak memilikinya sendiri. Teks ini dibuang: yang ditempel selalu berasal dari model transkripsi. Menggunakan lebih banyak memori karena kedua model tetap dimuat.",
+        "off": "Mati",
+        "none": "Tidak ada model terunduh yang mendukung streaming langsung"
+      },
       "acceleration": {
         "transcribe": {
           "title": "Akselerasi transcribe.cpp",

@@ -16,6 +16,7 @@ use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::thread;
@@ -128,6 +129,51 @@ struct FinalizedStreamText {
     supported_languages: Vec<String>,
 }
 
+/// Engine slot a stream worker streams on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StreamSlot {
+    /// The transcription model (`TranscriptionManager::engine`). Its native
+    /// stream can produce the final text; a batch model can show the chunked
+    /// live preview instead.
+    Main,
+    /// The live model (`TranscriptionManager::live`): native streaming only,
+    /// and its text is always disposable — another model or the cloud
+    /// produces the final text.
+    Live,
+}
+
+impl StreamSlot {
+    /// Slot name for log lines.
+    fn name(self) -> &'static str {
+        match self {
+            StreamSlot::Main => "main",
+            StreamSlot::Live => "live",
+        }
+    }
+
+    /// Log-line prefix of this slot's stream worker.
+    fn log_label(self) -> &'static str {
+        match self {
+            StreamSlot::Main => "Live preview",
+            StreamSlot::Live => "Live model",
+        }
+    }
+
+    /// Whether `Finalize` may flush this slot's stream into the final text.
+    /// A live-slot stream always replies `None`, so the caller transcribes
+    /// with the final model.
+    fn yields_final_text(self) -> bool {
+        self == StreamSlot::Main
+    }
+
+    /// Whether frames still queued after stop/cancel closed the route are
+    /// fed. The main slot must (they belong to the final text); the live
+    /// slot's text is discarded, so it skips them and frees its engine fast.
+    fn feeds_after_close(self) -> bool {
+        self == StreamSlot::Main
+    }
+}
+
 /// Routes real-time audio frames to the active streaming worker. Shared between
 /// the [`TranscriptionManager`] (opens/closes the route) and the audio recorder's
 /// per-frame callback (feeds frames). The recorder holds an `Arc<StreamRouter>`
@@ -135,7 +181,7 @@ struct FinalizedStreamText {
 /// load — no Tauri state lookup, no mutex lock.
 pub struct StreamRouter {
     /// Command channel to the active streaming worker, present from
-    /// `start_stream` until `finalize_stream`/`cancel_stream`.
+    /// `start_stream`/`start_live_stream` until `finalize_stream`/`cancel_stream`.
     tx: Mutex<Option<mpsc::Sender<StreamCmd>>>,
     /// True while a stream is pending or active (channel is open). The audio
     /// callback checks this first to avoid the mutex lock when no stream runs.
@@ -416,6 +462,116 @@ impl Drop for StreamWorkerGuard {
     }
 }
 
+/// The live engine slot: a second, natively streaming model that only shows
+/// disposable live text while the transcription model — local or cloud —
+/// produces the final text (see [`TranscriptionManager::start_live_stream`]).
+///
+/// Every field is its own: a live load or live stream never touches the main
+/// slot's `engine`, `current_model_id`, `active_engine_lease` or `is_loading`,
+/// so a batch `transcribe()` never waits on the live worker and
+/// `is_model_loaded()` keeps meaning "main model". Generic over the engine
+/// type only so its bookkeeping is unit-testable without loading a model.
+///
+/// Lock order: `model_id` before `engine` wherever both are held, so a worker
+/// handing its engine back can never race an unload into a slot that holds an
+/// engine but no model id.
+struct LiveSlot<E> {
+    engine: Mutex<Option<E>>,
+    model_id: Mutex<Option<String>>,
+    /// True while a live load runs; live stream workers wait on it.
+    is_loading: Arc<Mutex<bool>>,
+    loading_condvar: Arc<Condvar>,
+    /// Nonzero (the worker id) while a live stream worker has the engine out
+    /// of `engine`.
+    lease: Arc<AtomicU64>,
+}
+
+impl<E> LiveSlot<E> {
+    fn new() -> Self {
+        Self {
+            engine: Mutex::new(None),
+            model_id: Mutex::new(None),
+            is_loading: Arc::new(Mutex::new(false)),
+            loading_condvar: Arc::new(Condvar::new()),
+            lease: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    /// Lock the engine, recovering from poison left by a panicked engine call.
+    fn lock_engine(&self) -> MutexGuard<'_, Option<E>> {
+        self.engine
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn lock_model_id(&self) -> MutexGuard<'_, Option<String>> {
+        self.model_id
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Id recorded for the slot (also while its engine is leased).
+    fn model_id(&self) -> Option<String> {
+        self.lock_model_id().clone()
+    }
+
+    /// Id of the model whose engine is in the slot or leased; `None` when the
+    /// slot is empty, e.g. after a stream worker panicked holding the engine.
+    fn loaded_model_id(&self) -> Option<String> {
+        let id = self.lock_model_id();
+        id.clone().filter(|_| self.is_loaded())
+    }
+
+    /// Whether an engine sits in the slot or is leased to a live stream worker.
+    fn is_loaded(&self) -> bool {
+        self.lock_engine().is_some() || self.lease.load(Ordering::Acquire) != 0
+    }
+
+    /// Whether the slot holds `model_id`'s engine, in place or leased.
+    fn holds(&self, model_id: &str) -> bool {
+        let id = self.lock_model_id();
+        id.as_deref() == Some(model_id) && self.is_loaded()
+    }
+
+    /// Empty the slot, returning its engine for the caller to drop outside the
+    /// locks. A leased engine is dropped by its worker when it comes back.
+    fn clear(&self) -> Option<E> {
+        let mut id = self.lock_model_id();
+        *id = None;
+        self.lock_engine().take()
+    }
+
+    /// Put a freshly loaded engine in the slot, returning any engine it
+    /// replaced (a concurrent load) for the caller to drop.
+    fn install(&self, model_id: &str, engine: E) -> Option<E> {
+        let mut id = self.lock_model_id();
+        let replaced = self.lock_engine().replace(engine);
+        *id = Some(model_id.to_string());
+        replaced
+    }
+
+    /// Take the engine out for a stream worker that holds the lease.
+    fn take_engine(&self) -> Option<E> {
+        self.lock_engine().take()
+    }
+
+    /// Hand a leased engine back. Returns it as `Some` when it is stale — the
+    /// slot was unloaded, switched to another model or reloaded meanwhile —
+    /// for the caller to drop.
+    fn return_engine(&self, engine: E, expected_model_id: &str) -> Option<E> {
+        let id = self.lock_model_id();
+        if id.as_deref() != Some(expected_model_id) {
+            return Some(engine);
+        }
+        let mut slot = self.lock_engine();
+        if slot.is_some() {
+            return Some(engine);
+        }
+        *slot = Some(engine);
+        None
+    }
+}
+
 #[derive(Clone)]
 pub struct TranscriptionManager {
     engine: Arc<Mutex<Option<LoadedEngine>>>,
@@ -447,8 +603,11 @@ pub struct TranscriptionManager {
     active_stream_worker: Arc<AtomicU64>,
     /// Nonzero while the streaming worker has taken the engine out of `engine`.
     /// `is_model_loaded()` consults this so the model still reports "loaded"
-    /// while the worker holds it.
+    /// while the worker holds it. Main slot only: a live-slot worker leases
+    /// `live.lease` instead.
     active_engine_lease: Arc<AtomicU64>,
+    /// The live model's engine slot; see [`LiveSlot`].
+    live: Arc<LiveSlot<LoadedEngine>>,
 }
 
 impl TranscriptionManager {
@@ -469,6 +628,7 @@ impl TranscriptionManager {
             next_stream_worker_id: Arc::new(AtomicU64::new(1)),
             active_stream_worker: Arc::new(AtomicU64::new(0)),
             active_engine_lease: Arc::new(AtomicU64::new(0)),
+            live: Arc::new(LiveSlot::new()),
         };
 
         // Start the idle watcher
@@ -533,6 +693,16 @@ impl TranscriptionManager {
                                         error!("Failed to unload idle model: {}", e);
                                     }
                                 }
+                            }
+                            // The live slot shares the idle timer: its loads
+                            // and stream feeds touch it too.
+                            if manager_cloned.live.is_loaded() {
+                                info!(
+                                    "Live model idle for {}s (limit: {}s), unloading",
+                                    idle_ms / 1000,
+                                    limit_seconds
+                                );
+                                manager_cloned.unload_live_model();
                             }
                         }
                     }
@@ -627,16 +797,22 @@ impl TranscriptionManager {
         self.last_activity.store(Self::now_ms(), Ordering::Relaxed);
     }
 
-    /// Unloads the model immediately if the setting is enabled and the model is loaded
+    /// Unloads the models immediately if the setting is enabled: the main model
+    /// when loaded, and the live slot together with it.
     pub fn maybe_unload_immediately(&self, context: &str) {
         let settings = get_settings(&self.app_handle);
-        if settings.model_unload_timeout == ModelUnloadTimeout::Immediately
-            && self.is_model_loaded()
-        {
+        if settings.model_unload_timeout != ModelUnloadTimeout::Immediately {
+            return;
+        }
+        if self.is_model_loaded() {
             info!("Immediately unloading model after {}", context);
             if let Err(e) = self.unload_model() {
                 warn!("Failed to immediately unload model: {}", e);
             }
+        }
+        if self.live.is_loaded() {
+            info!("Immediately unloading live model after {}", context);
+            self.unload_live_model();
         }
     }
 
@@ -726,158 +902,9 @@ impl TranscriptionManager {
         }
 
         // Create appropriate engine based on model type
-
-        let loaded_engine = match model_info.engine_type {
-            EngineType::TranscribeCpp => {
-                // The whisper backend is chosen at load time (transcribe-cpp has
-                // no runtime global). With an explicit `device_index` (the
-                // --device-index flag) hard-select that registered device;
-                // otherwise re-read the persisted accelerator preference (so an
-                // accelerator change marked for reload takes effect here).
-                let (backend, device) = match device_index {
-                    Some(index) => resolve_device_index(index).inspect_err(|e| {
-                        emit_loading_failed(&e.to_string());
-                    })?,
-                    None => {
-                        let settings = get_settings(&self.app_handle);
-                        let accelerator = settings.transcribe_accelerator;
-                        let device = resolve_gpu_device(
-                            accelerator,
-                            settings.transcribe_gpu_device.as_deref(),
-                        );
-                        // Backend::Auto accepts an exact GPU device. Without a
-                        // valid exact device, backend selection handles the
-                        // retired generic GPU state and host CPU guard.
-                        let backend = if device.is_some() {
-                            Backend::Auto
-                        } else {
-                            select_transcribe_backend(accelerator)
-                        };
-                        (backend, device)
-                    }
-                };
-                let requested_device = device
-                    .as_ref()
-                    .map(transcribe_device_label)
-                    .unwrap_or_else(|| "automatic".to_string());
-                let model_options = ModelOptions { backend, device };
-                let model = Model::load_with(&model_path, &model_options).map_err(|e| {
-                    let error_msg = format!("Failed to load whisper model {}: {}", model_id, e);
-                    emit_loading_failed(&error_msg);
-                    anyhow::anyhow!(error_msg)
-                })?;
-                // The bound backend may differ from the request (e.g. CPU
-                // fallback under Auto); log what actually loaded.
-                let bound_backend = model.backend();
-                let session = model.session().map_err(|e| {
-                    let error_msg = format!(
-                        "Failed to create session for whisper model {}: {}",
-                        model_id, e
-                    );
-                    emit_loading_failed(&error_msg);
-                    anyhow::anyhow!(error_msg)
-                })?;
-                // Reconcile the registry's advertised capabilities with the
-                // loaded model's real ones (GGUF metadata) so badges/gating
-                // reflect runtime truth, not the pre-download probe. The
-                // load-completed event below triggers the frontend refresh.
-                let caps = session.model().capabilities();
-                self.model_manager.set_runtime_capabilities(
-                    model_id,
-                    caps.supports_streaming,
-                    caps.supports_translate,
-                    caps.supports_language_detect,
-                    caps.languages.clone(),
-                );
-                let bound_device = model
-                    .device()
-                    .map(|device| transcribe_device_label(&device))
-                    .unwrap_or_else(|_| "unknown".to_string());
-                info!(
-                    "Loaded whisper model '{}' (requested {:?}, requested device '{}', \
-                     bound backend '{}', bound device '{}', supports_streaming={}, \
-                     supports_translate={}, supports_language_detect={})",
-                    model_id,
-                    backend,
-                    requested_device,
-                    bound_backend,
-                    bound_device,
-                    caps.supports_streaming,
-                    caps.supports_translate,
-                    caps.supports_language_detect
-                );
-                LoadedEngine::TranscribeCpp(session)
-            }
-            EngineType::Parakeet => {
-                let engine =
-                    ParakeetModel::load(&model_path, &Quantization::Int8).map_err(|e| {
-                        let error_msg =
-                            format!("Failed to load parakeet model {}: {}", model_id, e);
-                        emit_loading_failed(&error_msg);
-                        anyhow::anyhow!(error_msg)
-                    })?;
-                LoadedEngine::Parakeet(engine)
-            }
-            EngineType::Moonshine => {
-                let engine = MoonshineModel::load(
-                    &model_path,
-                    MoonshineVariant::Base,
-                    &Quantization::default(),
-                )
-                .map_err(|e| {
-                    let error_msg = format!("Failed to load moonshine model {}: {}", model_id, e);
-                    emit_loading_failed(&error_msg);
-                    anyhow::anyhow!(error_msg)
-                })?;
-                LoadedEngine::Moonshine(engine)
-            }
-            EngineType::MoonshineStreaming => {
-                let engine = StreamingModel::load(&model_path, 0, &Quantization::default())
-                    .map_err(|e| {
-                        let error_msg = format!(
-                            "Failed to load moonshine streaming model {}: {}",
-                            model_id, e
-                        );
-                        emit_loading_failed(&error_msg);
-                        anyhow::anyhow!(error_msg)
-                    })?;
-                LoadedEngine::MoonshineStreaming(engine)
-            }
-            EngineType::SenseVoice => {
-                let engine =
-                    SenseVoiceModel::load(&model_path, &Quantization::Int8).map_err(|e| {
-                        let error_msg =
-                            format!("Failed to load SenseVoice model {}: {}", model_id, e);
-                        emit_loading_failed(&error_msg);
-                        anyhow::anyhow!(error_msg)
-                    })?;
-                LoadedEngine::SenseVoice(engine)
-            }
-            EngineType::GigaAM => {
-                let engine = GigaAMModel::load(&model_path, &Quantization::Int8).map_err(|e| {
-                    let error_msg = format!("Failed to load gigaam model {}: {}", model_id, e);
-                    emit_loading_failed(&error_msg);
-                    anyhow::anyhow!(error_msg)
-                })?;
-                LoadedEngine::GigaAM(engine)
-            }
-            EngineType::Canary => {
-                let engine = CanaryModel::load(&model_path, &Quantization::Int8).map_err(|e| {
-                    let error_msg = format!("Failed to load canary model {}: {}", model_id, e);
-                    emit_loading_failed(&error_msg);
-                    anyhow::anyhow!(error_msg)
-                })?;
-                LoadedEngine::Canary(engine)
-            }
-            EngineType::Cohere => {
-                let engine = CohereModel::load(&model_path, &Quantization::Int8).map_err(|e| {
-                    let error_msg = format!("Failed to load cohere model {}: {}", model_id, e);
-                    emit_loading_failed(&error_msg);
-                    anyhow::anyhow!(error_msg)
-                })?;
-                LoadedEngine::Cohere(engine)
-            }
-        };
+        let loaded_engine = self
+            .build_engine(model_id, &model_info.engine_type, model_path, device_index)
+            .inspect_err(|error| emit_loading_failed(&error.to_string()))?;
 
         // Update the current engine and model ID
         {
@@ -910,6 +937,162 @@ impl TranscriptionManager {
             load_duration.as_millis()
         );
         Ok(())
+    }
+
+    /// Build the engine for one model file. Shared by the main slot
+    /// ([`Self::load_model_with_device`]) and the live slot
+    /// ([`Self::load_live_model`]). It touches neither slot and emits no
+    /// events: the caller decides where the engine goes and how a failure is
+    /// reported. `device_index` hard-selects a transcribe-cpp device (see
+    /// [`Self::load_model_with_device`]); `None` keeps the persisted setting.
+    fn build_engine(
+        &self,
+        model_id: &str,
+        engine_type: &EngineType,
+        model_path: PathBuf,
+        device_index: Option<usize>,
+    ) -> Result<LoadedEngine> {
+        let loaded_engine = match engine_type {
+            EngineType::TranscribeCpp => {
+                // The whisper backend is chosen at load time (transcribe-cpp has
+                // no runtime global). With an explicit `device_index` (the
+                // --device-index flag) hard-select that registered device;
+                // otherwise re-read the persisted accelerator preference (so an
+                // accelerator change marked for reload takes effect here).
+                let (backend, device) = match device_index {
+                    Some(index) => resolve_device_index(index)?,
+                    None => {
+                        let settings = get_settings(&self.app_handle);
+                        let accelerator = settings.transcribe_accelerator;
+                        let device = resolve_gpu_device(
+                            accelerator,
+                            settings.transcribe_gpu_device.as_deref(),
+                        );
+                        // Backend::Auto accepts an exact GPU device. Without a
+                        // valid exact device, backend selection handles the
+                        // retired generic GPU state and host CPU guard.
+                        let backend = if device.is_some() {
+                            Backend::Auto
+                        } else {
+                            select_transcribe_backend(accelerator)
+                        };
+                        (backend, device)
+                    }
+                };
+                let requested_device = device
+                    .as_ref()
+                    .map(transcribe_device_label)
+                    .unwrap_or_else(|| "automatic".to_string());
+                let model_options = ModelOptions { backend, device };
+                let model = Model::load_with(&model_path, &model_options).map_err(|e| {
+                    let error_msg = format!("Failed to load whisper model {}: {}", model_id, e);
+                    anyhow::anyhow!(error_msg)
+                })?;
+                // The bound backend may differ from the request (e.g. CPU
+                // fallback under Auto); log what actually loaded.
+                let bound_backend = model.backend();
+                let session = model.session().map_err(|e| {
+                    let error_msg = format!(
+                        "Failed to create session for whisper model {}: {}",
+                        model_id, e
+                    );
+                    anyhow::anyhow!(error_msg)
+                })?;
+                // Reconcile the registry's advertised capabilities with the
+                // loaded model's real ones (GGUF metadata) so badges/gating
+                // reflect runtime truth, not the pre-download probe. The main
+                // slot's load-completed event triggers the frontend refresh.
+                let caps = session.model().capabilities();
+                self.model_manager.set_runtime_capabilities(
+                    model_id,
+                    caps.supports_streaming,
+                    caps.supports_translate,
+                    caps.supports_language_detect,
+                    caps.languages.clone(),
+                );
+                let bound_device = model
+                    .device()
+                    .map(|device| transcribe_device_label(&device))
+                    .unwrap_or_else(|_| "unknown".to_string());
+                info!(
+                    "Loaded whisper model '{}' (requested {:?}, requested device '{}', \
+                     bound backend '{}', bound device '{}', supports_streaming={}, \
+                     supports_translate={}, supports_language_detect={})",
+                    model_id,
+                    backend,
+                    requested_device,
+                    bound_backend,
+                    bound_device,
+                    caps.supports_streaming,
+                    caps.supports_translate,
+                    caps.supports_language_detect
+                );
+                LoadedEngine::TranscribeCpp(session)
+            }
+            EngineType::Parakeet => {
+                let engine =
+                    ParakeetModel::load(&model_path, &Quantization::Int8).map_err(|e| {
+                        let error_msg =
+                            format!("Failed to load parakeet model {}: {}", model_id, e);
+                        anyhow::anyhow!(error_msg)
+                    })?;
+                LoadedEngine::Parakeet(engine)
+            }
+            EngineType::Moonshine => {
+                let engine = MoonshineModel::load(
+                    &model_path,
+                    MoonshineVariant::Base,
+                    &Quantization::default(),
+                )
+                .map_err(|e| {
+                    let error_msg = format!("Failed to load moonshine model {}: {}", model_id, e);
+                    anyhow::anyhow!(error_msg)
+                })?;
+                LoadedEngine::Moonshine(engine)
+            }
+            EngineType::MoonshineStreaming => {
+                let engine = StreamingModel::load(&model_path, 0, &Quantization::default())
+                    .map_err(|e| {
+                        let error_msg = format!(
+                            "Failed to load moonshine streaming model {}: {}",
+                            model_id, e
+                        );
+                        anyhow::anyhow!(error_msg)
+                    })?;
+                LoadedEngine::MoonshineStreaming(engine)
+            }
+            EngineType::SenseVoice => {
+                let engine =
+                    SenseVoiceModel::load(&model_path, &Quantization::Int8).map_err(|e| {
+                        let error_msg =
+                            format!("Failed to load SenseVoice model {}: {}", model_id, e);
+                        anyhow::anyhow!(error_msg)
+                    })?;
+                LoadedEngine::SenseVoice(engine)
+            }
+            EngineType::GigaAM => {
+                let engine = GigaAMModel::load(&model_path, &Quantization::Int8).map_err(|e| {
+                    let error_msg = format!("Failed to load gigaam model {}: {}", model_id, e);
+                    anyhow::anyhow!(error_msg)
+                })?;
+                LoadedEngine::GigaAM(engine)
+            }
+            EngineType::Canary => {
+                let engine = CanaryModel::load(&model_path, &Quantization::Int8).map_err(|e| {
+                    let error_msg = format!("Failed to load canary model {}: {}", model_id, e);
+                    anyhow::anyhow!(error_msg)
+                })?;
+                LoadedEngine::Canary(engine)
+            }
+            EngineType::Cohere => {
+                let engine = CohereModel::load(&model_path, &Quantization::Int8).map_err(|e| {
+                    let error_msg = format!("Failed to load cohere model {}: {}", model_id, e);
+                    anyhow::anyhow!(error_msg)
+                })?;
+                LoadedEngine::Cohere(engine)
+            }
+        };
+        Ok(loaded_engine)
     }
 
     /// Kicks off the model loading in a background thread if it's not already loaded
@@ -947,6 +1130,128 @@ impl TranscriptionManager {
         current_model.clone()
     }
 
+    /// Load `model_id` into the live slot, replacing any model there. Blocking:
+    /// waits for an in-progress live load first. Errs if the model is unknown,
+    /// not downloaded or not a transcribe-cpp model, or if the loaded model does
+    /// not support native streaming (the slot is left empty then). Never touches
+    /// the main slot and emits no `model-state-changed` events: those drive the
+    /// main-model UI.
+    pub fn load_live_model(&self, model_id: &str) -> Result<()> {
+        let _loading = self.begin_live_load();
+        self.load_into_live_slot(model_id)
+    }
+
+    /// Background load of `settings.live_model` into the live slot when it is
+    /// set and not already loaded there; no-op otherwise. Never blocks the
+    /// caller: a live stream started right after waits for this load.
+    pub fn initiate_live_model_load(&self) {
+        let settings = get_settings(&self.app_handle);
+        let model_id = settings.live_model.trim();
+        if model_id.is_empty() {
+            return;
+        }
+        let loading = {
+            let mut is_loading = self.live.is_loading.lock().unwrap();
+            if *is_loading || self.live.holds(model_id) {
+                return;
+            }
+            *is_loading = true;
+            LoadingGuard {
+                is_loading: Arc::clone(&self.live.is_loading),
+                loading_condvar: Arc::clone(&self.live.loading_condvar),
+            }
+        };
+        let manager = self.clone();
+        let model_id = model_id.to_string();
+        thread::spawn(move || {
+            // Held for the whole load: live stream workers wait on it.
+            let _loading = loading;
+            if let Err(e) = manager.load_into_live_slot(&model_id) {
+                error!("Failed to load live model '{}': {}", model_id, e);
+            }
+        });
+    }
+
+    /// Drop the live slot's engine (no-op when empty). A live stream holding
+    /// the engine drops it when it ends instead of handing it back.
+    pub fn unload_live_model(&self) {
+        let model_id = self.live.model_id();
+        drop(self.live.clear());
+        if let Some(model_id) = model_id {
+            info!("Unloaded live model '{}'", model_id);
+        }
+    }
+
+    /// Id of the model currently in the live slot (also while a live stream
+    /// has its engine leased); `None` when the slot is empty.
+    pub fn live_model_id(&self) -> Option<String> {
+        self.live.loaded_model_id()
+    }
+
+    /// Wait until no live load runs, then mark one as running so live stream
+    /// workers wait for it. The returned guard clears the flag on drop.
+    fn begin_live_load(&self) -> LoadingGuard {
+        let mut is_loading = self.live.is_loading.lock().unwrap();
+        while *is_loading {
+            is_loading = self.live.loading_condvar.wait(is_loading).unwrap();
+        }
+        *is_loading = true;
+        LoadingGuard {
+            is_loading: Arc::clone(&self.live.is_loading),
+            loading_condvar: Arc::clone(&self.live.loading_condvar),
+        }
+    }
+
+    /// The live load itself; the caller holds the live loading flag.
+    fn load_into_live_slot(&self, model_id: &str) -> Result<()> {
+        let load_start = Instant::now();
+        info!("Loading live model '{}'", model_id);
+        let model_info = self
+            .model_manager
+            .get_model_info(model_id)
+            .ok_or_else(|| anyhow::anyhow!("Model not found: {}", model_id))?;
+        if !model_info.is_downloaded {
+            return Err(anyhow::anyhow!(
+                "Live model '{}' is not downloaded",
+                model_id
+            ));
+        }
+        if !matches!(model_info.engine_type, EngineType::TranscribeCpp) {
+            return Err(anyhow::anyhow!(
+                "Live model '{}' is not a transcribe-cpp model, so it cannot stream",
+                model_id
+            ));
+        }
+        let model_path = self.model_manager.get_model_path(model_id)?;
+
+        // Free the previous live engine before building the new one (peak
+        // memory), as the main slot does.
+        drop(self.live.clear());
+        let engine = self.build_engine(model_id, &model_info.engine_type, model_path, None)?;
+        let supports_streaming = match &engine {
+            LoadedEngine::TranscribeCpp(session) => {
+                session.model().capabilities().supports_streaming
+            }
+            _ => false,
+        };
+        if !supports_streaming {
+            return Err(anyhow::anyhow!(
+                "Live model '{}' does not support native streaming",
+                model_id
+            ));
+        }
+        drop(self.live.install(model_id, engine));
+        // Like a main load, reset the idle timer so the watcher doesn't unload
+        // a just-loaded model.
+        self.touch_activity();
+        info!(
+            "Loaded live model '{}' (took {}ms)",
+            model_id,
+            load_start.elapsed().as_millis()
+        );
+        Ok(())
+    }
+
     /// The compute backend the currently-loaded engine is bound to, for
     /// diagnostics (e.g. confirming `--device-index` actually bound a GPU rather
     /// than falling back to CPU/auto). transcribe-cpp (whisper-family) reports
@@ -973,7 +1278,7 @@ impl TranscriptionManager {
         Arc::clone(&self.router)
     }
 
-    /// Begin a live streaming transcription on the held engine's session.
+    /// Begin a live streaming transcription on the main slot's engine.
     /// Audio frames pushed via [`StreamRouter::feed`] (captured directly by the
     /// audio recorder) are decoded incrementally and emitted to the overlay as
     /// [`StreamTextEvent`].
@@ -988,8 +1293,40 @@ impl TranscriptionManager {
     /// the worker, which — for batch transcribe-cpp models with a non-standard
     /// `LiveMode` — transcribes each one as a disposable live preview.
     pub fn start_stream(&self, preview_segments: bool) {
+        self.spawn_stream_worker(StreamSlot::Main, preview_segments);
+    }
+
+    /// Like `start_stream(false)`, but the worker streams on the live slot's
+    /// engine (see [`Self::load_live_model`]): disposable live text while the
+    /// transcription model — local or cloud — produces the final text.
+    ///
+    /// Non-blocking; the worker waits for an in-progress live load. Frames
+    /// arrive through the same [`StreamRouter`] and text goes out as the same
+    /// [`StreamTextEvent`] (same `FirstText` latency mark). End it with
+    /// [`Self::cancel_stream`]: the text is discarded and the engine goes back
+    /// to the live slot. Live text is never final: [`Self::finalize_stream`]
+    /// on a live-slot stream replies `Ok(None)`. A model without native
+    /// streaming shows nothing and just drains until the stream ends.
+    pub fn start_live_stream(&self) {
+        self.spawn_stream_worker(StreamSlot::Live, false);
+    }
+
+    /// Whether a stream worker (main or live slot) is still running: set by
+    /// [`Self::start_stream`]/[`Self::start_live_stream`], cleared once the
+    /// worker has exited and returned its engine. A new stream cannot start
+    /// while this is true.
+    pub fn is_stream_worker_active(&self) -> bool {
+        self.active_stream_worker.load(Ordering::Acquire) != 0
+    }
+
+    /// Open the route and spawn the stream worker for `slot`. Only one worker
+    /// exists at a time, whichever slot it streams on.
+    fn spawn_stream_worker(&self, slot: StreamSlot, preview_segments: bool) {
         if self.router.is_open() || self.active_stream_worker.load(Ordering::Acquire) != 0 {
-            warn!("start_stream called while a stream worker is already active");
+            warn!(
+                "{} stream requested while a stream worker is already active",
+                slot.name()
+            );
             return;
         }
         let worker_id = self.next_stream_worker_id.fetch_add(1, Ordering::Relaxed);
@@ -998,7 +1335,10 @@ impl TranscriptionManager {
             .compare_exchange(0, worker_id, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
-            warn!("start_stream lost a race with another stream worker");
+            warn!(
+                "{} stream lost a race with another stream worker",
+                slot.name()
+            );
             return;
         }
         let rx = self.router.open(preview_segments);
@@ -1008,61 +1348,68 @@ impl TranscriptionManager {
         // The worker can outlive this recording (a preview chunk still running
         // after cancel), so it marks through the trace session it started in.
         let trace = latency_trace::session();
-        thread::spawn(move || manager.run_stream_worker(rx, worker_id, trace));
+        thread::spawn(move || {
+            manager.run_stream_worker(rx, worker_id, slot, trace);
+        });
     }
 
     fn run_stream_worker(
         &self,
         rx: mpsc::Receiver<StreamCmd>,
         worker_id: u64,
+        slot: StreamSlot,
         trace: latency_trace::Session,
     ) {
+        let lease = Arc::clone(self.slot_lease(slot));
         let _worker = StreamWorkerGuard {
             worker_id,
             active_stream_worker: Arc::clone(&self.active_stream_worker),
-            active_engine_lease: Arc::clone(&self.active_engine_lease),
+            active_engine_lease: Arc::clone(&lease),
             stream_active: Arc::clone(&self.stream_active),
         };
+        let label = slot.log_label();
 
-        // Wait for any in-progress model load to finish (start_stream races the
-        // background load kicked off when recording starts).
-        {
-            let mut is_loading = self.is_loading.lock().unwrap();
-            while *is_loading {
-                is_loading = self.loading_condvar.wait(is_loading).unwrap();
-            }
+        // Wait for any in-progress load into this slot to finish (the stream
+        // start races the background load kicked off when recording starts).
+        self.wait_for_slot_load(slot);
+
+        // A live-slot stream closed during that wait (stop or cancel) has no
+        // text worth producing: don't take the engine at all.
+        if !slot.feeds_after_close() && !self.router.is_open() {
+            debug!("{}: stream closed before it began", label);
+            drain_until_finalize(rx);
+            return;
         }
 
-        let model_id = self.get_current_model().unwrap_or_default();
+        let model_id = self.slot_model_id(slot).unwrap_or_default();
 
         // Take the engine out of the mutex so we own it during streaming,
         // structurally excluding any concurrent batch transcription (which
         // transcribe-cpp's compute_lock would refuse anyway). Returned when the
         // worker exits, or dropped if the model was switched/unloaded mid-stream.
-        if self
-            .active_engine_lease
+        if lease
             .compare_exchange(0, worker_id, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
-            warn!("Live preview: another worker already holds the transcription engine");
+            warn!(
+                "{}: another worker already holds the transcription engine",
+                label
+            );
             self.router.clear();
             drain_until_finalize(rx);
             return;
         }
-        let mut engine = match self.lock_engine().take() {
+        let mut engine = match self.take_slot_engine(slot) {
             Some(e) => e,
             None => {
                 info!(
-                    "Live preview: model '{}' was unloaded before streaming could begin; \
-                     falling back to batch transcription",
+                    "{}: no model is loaded in the {} slot (model '{}'); no live stream \
+                     for this recording",
+                    label,
+                    slot.name(),
                     model_id
                 );
-                let _ = self.active_engine_lease.compare_exchange(
-                    worker_id,
-                    0,
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
-                );
+                let _ = lease.compare_exchange(worker_id, 0, Ordering::AcqRel, Ordering::Acquire);
                 self.router.clear();
                 drain_until_finalize(rx);
                 return;
@@ -1077,8 +1424,9 @@ impl TranscriptionManager {
                 let model = session.model();
                 let caps = model.capabilities();
                 info!(
-                    "Live preview: model '{}' arch='{}' variant='{}' supports_streaming={} \
+                    "{}: model '{}' arch='{}' variant='{}' supports_streaming={} \
                      supports_translate={} languages={:?}",
+                    label,
                     model_id,
                     model.arch(),
                     model.variant(),
@@ -1094,19 +1442,20 @@ impl TranscriptionManager {
             }
             _ => {
                 info!(
-                    "Live preview: model '{}' is not a transcribe-cpp model; \
-                     streaming is unavailable, using batch transcription",
-                    model_id
+                    "{}: model '{}' is not a transcribe-cpp model; \
+                     streaming is unavailable",
+                    label, model_id
                 );
                 (false, false, Vec::new())
             }
         };
 
         if !supports_streaming {
-            // Batch whisper-family model: with a non-standard live mode, show a
-            // chunked batch preview. The final text still comes from a full
-            // batch transcription on stop.
-            if matches!(engine, LoadedEngine::TranscribeCpp(_)) {
+            // Batch whisper-family model on the main slot: with a non-standard
+            // live mode, show a chunked batch preview. The final text still
+            // comes from a full batch transcription on stop. The live slot has
+            // no fallback: a model without native streaming just drains.
+            if slot == StreamSlot::Main && matches!(engine, LoadedEngine::TranscribeCpp(_)) {
                 let settings = get_settings(&self.app_handle);
                 if settings.live_mode.wants_batch_preview() {
                     self.run_chunked_preview(
@@ -1122,7 +1471,7 @@ impl TranscriptionManager {
                     return;
                 }
             }
-            self.return_engine(engine, &model_id);
+            self.return_slot_engine(slot, engine, &model_id);
             self.router.clear();
             drain_until_finalize(rx);
             return;
@@ -1209,8 +1558,10 @@ impl TranscriptionManager {
             self.stream_active.store(true, Ordering::Release);
             self.touch_activity();
             info!(
-                "Live streaming transcription started (model '{}', backend '{}')",
-                model_id, backend
+                "Live streaming transcription started on the {} slot (model '{}', backend '{}')",
+                slot.name(),
+                model_id,
+                backend
             );
 
             let mut perf = StreamPerf::new();
@@ -1218,6 +1569,12 @@ impl TranscriptionManager {
                 match cmd {
                     StreamCmd::Feed(pcm) => {
                         self.touch_activity();
+                        // Once stop/cancel closed the route, a live-slot stream's
+                        // text is discarded: skip the queued frames so its engine
+                        // is back in the live slot quickly.
+                        if !slot.feeds_after_close() && !self.router.is_open() {
+                            continue;
+                        }
                         perf.record_feed(pcm.len());
                         trace.mark(Mark::FirstFeed);
                         let feed_start = Instant::now();
@@ -1242,6 +1599,15 @@ impl TranscriptionManager {
                                 warn!("stream feed failed: {}", e);
                             }
                         }
+                    }
+                    StreamCmd::Finalize(reply) if !slot.yields_final_text() => {
+                        // Live text is never the final text: reply `None`
+                        // without flushing, so the caller transcribes the
+                        // recording with the final model.
+                        stream.reset();
+                        finalize_reply = Some(reply);
+                        finalize_result = Some(None);
+                        break;
                     }
                     StreamCmd::Finalize(reply) => {
                         let finalize_start = Instant::now();
@@ -1312,12 +1678,12 @@ impl TranscriptionManager {
             // failed); drain so the finalize handshake still completes and the
             // caller falls back to batch transcription. Return the engine first
             // so the fallback can immediately use it.
-            self.return_engine(engine, &model_id);
+            self.return_slot_engine(slot, engine, &model_id);
             drain_until_finalize(rx);
             return;
         }
 
-        self.return_engine(engine, &model_id);
+        self.return_slot_engine(slot, engine, &model_id);
         if let (Some(reply), Some(result)) = (finalize_reply, finalize_result) {
             let _ = reply.send(result);
         }
@@ -1572,12 +1938,68 @@ impl TranscriptionManager {
         }
     }
 
+    /// The engine-lease flag of `slot`'s stream worker.
+    fn slot_lease(&self, slot: StreamSlot) -> &Arc<AtomicU64> {
+        match slot {
+            StreamSlot::Main => &self.active_engine_lease,
+            StreamSlot::Live => &self.live.lease,
+        }
+    }
+
+    /// Block until no load into `slot` is in progress.
+    fn wait_for_slot_load(&self, slot: StreamSlot) {
+        let (is_loading, loading_condvar) = match slot {
+            StreamSlot::Main => (&self.is_loading, &self.loading_condvar),
+            StreamSlot::Live => (&self.live.is_loading, &self.live.loading_condvar),
+        };
+        let mut loading = is_loading.lock().unwrap();
+        while *loading {
+            loading = loading_condvar.wait(loading).unwrap();
+        }
+    }
+
+    /// Id of the model loaded in `slot`.
+    fn slot_model_id(&self, slot: StreamSlot) -> Option<String> {
+        match slot {
+            StreamSlot::Main => self.get_current_model(),
+            StreamSlot::Live => self.live.model_id(),
+        }
+    }
+
+    /// Take `slot`'s engine out for a stream worker that holds its lease.
+    fn take_slot_engine(&self, slot: StreamSlot) -> Option<LoadedEngine> {
+        match slot {
+            StreamSlot::Main => self.lock_engine().take(),
+            StreamSlot::Live => self.live.take_engine(),
+        }
+    }
+
+    /// Hand a stream worker's engine back to `slot`, dropping it when the slot
+    /// was unloaded or switched meanwhile.
+    fn return_slot_engine(&self, slot: StreamSlot, engine: LoadedEngine, model_id: &str) {
+        match slot {
+            StreamSlot::Main => self.return_engine(engine, model_id),
+            StreamSlot::Live => {
+                if let Some(stale) = self.live.return_engine(engine, model_id) {
+                    info!(
+                        "Live slot was unloaded or switched during the stream; dropping stale \
+                         engine (was '{}')",
+                        model_id
+                    );
+                    drop(stale);
+                }
+            }
+        }
+    }
+
     /// Flush the active stream and return its final, post-filtered text.
     ///
     /// `Ok(None)` means no usable stream was active and the caller may fall back
-    /// to batch transcription. `Err` means finalize itself failed or timed out.
-    /// A timeout may still leave the worker holding the engine, so callers
-    /// should surface it instead of immediately starting a batch fallback.
+    /// to batch transcription; a live-slot stream (see
+    /// [`Self::start_live_stream`]) always replies that way. `Err` means
+    /// finalize itself failed or timed out. A timeout may still leave the
+    /// worker holding the engine, so callers should surface it instead of
+    /// immediately starting a batch fallback.
     pub fn finalize_stream(&self) -> Result<Option<String>> {
         let Some(tx) = self.router.take() else {
             return Ok(None);
@@ -1614,7 +2036,9 @@ impl TranscriptionManager {
         Ok(Some(filtered))
     }
 
-    /// Abandon any active stream without producing text (e.g. on cancel).
+    /// Abandon any active stream without producing text (e.g. on cancel). This
+    /// is also how a live-slot stream ends: its text is discarded and its engine
+    /// goes back to the live slot.
     pub fn cancel_stream(&self) {
         if let Some(tx) = self.router.take() {
             let _ = tx.send(StreamCmd::Cancel);
@@ -3277,6 +3701,78 @@ mod tests {
         assert!(matches!(plan.task, Task::Transcribe));
         assert_eq!(plan.language.as_deref(), Some("es"));
         assert_eq!(plan.target_language, None);
+    }
+
+    /// Live text is disposable: a live-slot stream never satisfies a finalize
+    /// and stops feeding once stop/cancel closed the route, while the main
+    /// slot keeps both (its queued frames belong to the final text).
+    #[test]
+    fn only_the_main_slot_stream_yields_final_text() {
+        assert!(StreamSlot::Main.yields_final_text());
+        assert!(StreamSlot::Main.feeds_after_close());
+        assert!(!StreamSlot::Live.yields_final_text());
+        assert!(!StreamSlot::Live.feeds_after_close());
+    }
+
+    /// A worker without a usable engine (e.g. an empty live slot) answers a
+    /// finalize with no text, so the caller transcribes with the final model.
+    #[test]
+    fn draining_worker_answers_finalize_with_no_text() {
+        let (tx, rx) = mpsc::channel();
+        let (reply_tx, reply_rx) = mpsc::channel();
+        tx.send(StreamCmd::Feed(vec![0.5; 4])).unwrap();
+        tx.send(StreamCmd::Segment(vec![0.5; 4])).unwrap();
+        tx.send(StreamCmd::Finalize(reply_tx)).unwrap();
+        drain_until_finalize(rx);
+        assert!(matches!(reply_rx.recv(), Ok(None)));
+    }
+
+    #[test]
+    fn live_slot_takes_back_a_leased_engine_only_for_the_same_model() {
+        let slot = LiveSlot::new();
+        assert!(!slot.is_loaded());
+        assert!(slot.install("nemotron", "engine-a").is_none());
+        assert!(slot.holds("nemotron"));
+        assert!(!slot.holds("whisper"));
+
+        // Leased to a stream worker: still loaded and held, then handed back.
+        slot.lease.store(7, Ordering::Release);
+        let engine = slot.take_engine().unwrap();
+        assert_eq!(slot.loaded_model_id().as_deref(), Some("nemotron"));
+        assert!(slot.holds("nemotron"));
+        assert_eq!(slot.return_engine(engine, "nemotron"), None);
+        slot.lease.store(0, Ordering::Release);
+        assert!(slot.holds("nemotron"));
+
+        // Unloaded mid-stream: the engine comes back stale, to be dropped.
+        let engine = slot.take_engine().unwrap();
+        assert_eq!(slot.clear(), None);
+        assert_eq!(slot.return_engine(engine, "nemotron"), Some("engine-a"));
+        assert!(!slot.is_loaded());
+        assert_eq!(slot.model_id(), None);
+
+        // Switched to another model mid-stream: stale as well.
+        slot.install("nemotron", "engine-a");
+        let engine = slot.take_engine().unwrap();
+        slot.install("whisper", "engine-b");
+        assert_eq!(slot.return_engine(engine, "nemotron"), Some("engine-a"));
+        assert!(slot.holds("whisper"));
+
+        // Same model reloaded mid-stream: the fresh engine wins.
+        let engine = slot.take_engine().unwrap();
+        slot.install("whisper", "engine-c");
+        assert_eq!(slot.return_engine(engine, "whisper"), Some("engine-b"));
+        assert_eq!(slot.take_engine(), Some("engine-c"));
+
+        // A worker that panicked dropped the engine and its guard cleared the
+        // lease: the id is still recorded, but no model is loaded any more.
+        slot.install("whisper", "engine-d");
+        slot.lease.store(9, Ordering::Release);
+        assert!(slot.take_engine().is_some());
+        slot.lease.store(0, Ordering::Release);
+        assert_eq!(slot.model_id().as_deref(), Some("whisper"));
+        assert_eq!(slot.loaded_model_id(), None);
+        assert!(!slot.holds("whisper"));
     }
 }
 

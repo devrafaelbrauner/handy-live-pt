@@ -330,6 +330,12 @@
           "chunksPaste": "Incolla a blocchi (in arrivo)"
         }
       },
+      "liveModel": {
+        "label": "Modello live",
+        "description": "Modello con streaming che mostra il testo live mentre parli quando il modello di trascrizione (locale o cloud) non ne ha uno proprio. Questo testo viene scartato: ciò che viene incollato proviene sempre dal modello di trascrizione. Usa più memoria, perché entrambi i modelli restano caricati.",
+        "off": "Disattivato",
+        "none": "Nessun modello scaricato supporta lo streaming live"
+      },
       "acceleration": {
         "transcribe": {
           "title": "Accelerazione Whisper",

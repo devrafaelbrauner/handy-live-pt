@@ -330,6 +330,12 @@
           "chunksPaste": "Colar por trechos (em breve)"
         }
       },
+      "liveModel": {
+        "label": "Modelo ao vivo",
+        "description": "Modelo com streaming que mostra o texto enquanto você fala quando o modelo de transcrição (local ou na nuvem) não tem texto ao vivo próprio. Esse texto é descartado: o que é colado vem sempre do modelo de transcrição. Usa mais memória, porque os dois modelos ficam carregados.",
+        "off": "Desligado",
+        "none": "Nenhum modelo baixado tem streaming ao vivo"
+      },
       "acceleration": {
         "transcribe": {
           "title": "Aceleração Whisper",

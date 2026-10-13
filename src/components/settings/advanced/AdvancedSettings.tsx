@@ -23,6 +23,7 @@ import { AccelerationSelector } from "../AccelerationSelector";
 import { LazyStreamClose } from "../LazyStreamClose";
 import { StreamLatencyPresetSelector } from "../StreamLatencyPreset";
 import { LiveModeSetting } from "../LiveModeSetting";
+import { LiveModelSetting } from "../LiveModelSetting";
 import { FillerWordRemoval } from "../FillerWordRemoval";
 import { VadBackendSelector } from "../VadBackendSelector";
 
@@ -78,6 +79,7 @@ export const AdvancedSettings: React.FC = () => {
             grouped={true}
           />
           <LiveModeSetting descriptionMode="tooltip" grouped={true} />
+          <LiveModelSetting descriptionMode="tooltip" grouped={true} />
           <VadBackendSelector descriptionMode="tooltip" grouped={true} />
         </SettingsGroup>
       )}

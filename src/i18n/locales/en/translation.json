@@ -330,6 +330,12 @@
           "chunksPaste": "Paste chunks (coming soon)"
         }
       },
+      "liveModel": {
+        "label": "Live model",
+        "description": "Streaming model that shows live text while you speak when the transcription model (local or cloud) has none of its own. This text is discarded: what gets pasted always comes from the transcription model. Uses more memory, because both models stay loaded.",
+        "off": "Off",
+        "none": "No downloaded model supports live streaming"
+      },
       "acceleration": {
         "transcribe": {
           "title": "transcribe.cpp Acceleration",

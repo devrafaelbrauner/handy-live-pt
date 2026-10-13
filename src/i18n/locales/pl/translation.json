@@ -330,6 +330,12 @@
           "chunksPaste": "Wklejanie fragmentami (wkrótce)"
         }
       },
+      "liveModel": {
+        "label": "Model na żywo",
+        "description": "Model ze strumieniowaniem, który pokazuje tekst na żywo podczas mówienia, gdy model transkrypcji (lokalny lub w chmurze) nie ma własnego. Ten tekst jest odrzucany: wklejany tekst zawsze pochodzi z modelu transkrypcji. Zużywa więcej pamięci, ponieważ oba modele pozostają załadowane.",
+        "off": "Wyłączony",
+        "none": "Żaden pobrany model nie obsługuje strumieniowania na żywo"
+      },
       "acceleration": {
         "transcribe": {
           "title": "Akceleracja Whisper",

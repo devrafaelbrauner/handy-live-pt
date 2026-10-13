@@ -330,6 +330,12 @@
           "chunksPaste": "Vkládat po částech (brzy)"
         }
       },
+      "liveModel": {
+        "label": "Živý model",
+        "description": "Model se streamováním, který zobrazuje živý text během mluvení, když model pro přepis (místní nebo cloudový) žádný vlastní nemá. Tento text se zahodí: vložený text vždy pochází z modelu pro přepis. Využívá více paměti, protože oba modely zůstávají načtené.",
+        "off": "Vypnuto",
+        "none": "Žádný stažený model nepodporuje živé streamování"
+      },
       "acceleration": {
         "transcribe": {
           "title": "Akcelerace Whisper",

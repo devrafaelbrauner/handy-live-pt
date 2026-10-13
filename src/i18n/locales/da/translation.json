@@ -330,6 +330,12 @@
           "chunksPaste": "Indsæt i bidder (kommer snart)"
         }
       },
+      "liveModel": {
+        "label": "Livemodel",
+        "description": "Streamingmodel, der viser livetekst, mens du taler, når transskriptionsmodellen (lokal eller i skyen) ikke selv har det. Denne tekst kasseres: den indsatte tekst kommer altid fra transskriptionsmodellen. Bruger mere hukommelse, fordi begge modeller forbliver indlæst.",
+        "off": "Fra",
+        "none": "Ingen downloadet model understøtter livestreaming"
+      },
       "acceleration": {
         "transcribe": {
           "title": "transcribe.cpp-acceleration",

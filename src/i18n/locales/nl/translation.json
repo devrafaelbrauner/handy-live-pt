@@ -330,6 +330,12 @@
           "chunksPaste": "Fragmenten plakken (binnenkort)"
         }
       },
+      "liveModel": {
+        "label": "Livemodel",
+        "description": "Streamingmodel dat live tekst toont tijdens het spreken wanneer het transcriptiemodel (lokaal of in de cloud) dat zelf niet heeft. Deze tekst wordt weggegooid: de geplakte tekst komt altijd van het transcriptiemodel. Gebruikt meer geheugen, omdat beide modellen geladen blijven.",
+        "off": "Uit",
+        "none": "Geen gedownload model ondersteunt live streaming"
+      },
       "acceleration": {
         "transcribe": {
           "title": "transcribe.cpp-versnelling",
