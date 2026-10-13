@@ -330,6 +330,12 @@
           "chunksPaste": "Parça parça yapıştır (yakında)"
         }
       },
+      "liveModel": {
+        "label": "Canlı model",
+        "description": "Yazıya dökme modeli (yerel veya bulut) kendi canlı metnine sahip olmadığında, konuşurken canlı metin gösteren akış destekli model. Bu metin atılır: yapıştırılan metin her zaman yazıya dökme modelinden gelir. Her iki model de yüklü kaldığı için daha fazla bellek kullanır.",
+        "off": "Kapalı",
+        "none": "İndirilmiş hiçbir model canlı akışı desteklemiyor"
+      },
       "acceleration": {
         "transcribe": {
           "title": "transcribe.cpp Hızlandırması",

@@ -375,6 +375,14 @@ async changeLiveModeSetting(mode: LiveMode) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async changeLiveModelSetting(modelId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_live_model_setting", { modelId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeVadEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_vad_enabled_setting", { enabled }) };
@@ -1062,7 +1070,14 @@ stream_latency_preset?: StreamLatencyPreset;
  * Live text mode for batch models. Defaults to `Standard`, i.e. no live
  * preview worker for non-streaming models.
  */
-live_mode?: LiveMode; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number;
+live_mode?: LiveMode;
+/**
+ * Live model: a natively streaming model whose disposable live text is
+ * shown while the transcription model — local or cloud — has no live text
+ * of its own. The pasted text always comes from the transcription model.
+ * Empty means off (the default).
+ */
+live_model?: string; keyboard_implementation?: KeyboardImplementation; show_tray_icon?: boolean; paste_delay_ms?: number; paste_delay_after_ms?: number;
 /**
  * Debug-gated ("beta") receipt-sequenced paste: restore the clipboard only
  * after the target app actually reads the transcript, instead of after a

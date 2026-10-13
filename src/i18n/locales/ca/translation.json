@@ -330,6 +330,12 @@
           "chunksPaste": "Enganxar per fragments (aviat)"
         }
       },
+      "liveModel": {
+        "label": "Model en directe",
+        "description": "Model amb streaming que mostra text en directe mentre parles quan el model de transcripció (local o al núvol) no en té de propi. Aquest text es descarta: el que s'enganxa sempre surt del model de transcripció. Fa servir més memòria, perquè els dos models queden carregats.",
+        "off": "Desactivat",
+        "none": "Cap model baixat admet streaming en directe"
+      },
       "acceleration": {
         "transcribe": {
           "title": "Acceleració del transcribe.cpp",

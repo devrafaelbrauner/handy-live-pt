@@ -330,6 +330,12 @@
           "chunksPaste": "Coller par segments (bientôt)"
         }
       },
+      "liveModel": {
+        "label": "Modèle en direct",
+        "description": "Modèle avec streaming qui affiche le texte en direct pendant que vous parlez lorsque le modèle de transcription (local ou cloud) n'en a pas. Ce texte est ignoré : le texte collé provient toujours du modèle de transcription. Utilise plus de mémoire, car les deux modèles restent chargés.",
+        "off": "Désactivé",
+        "none": "Aucun modèle téléchargé ne prend en charge le streaming en direct"
+      },
       "acceleration": {
         "transcribe": {
           "title": "Accélération Whisper",

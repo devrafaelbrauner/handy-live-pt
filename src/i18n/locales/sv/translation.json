@@ -330,6 +330,12 @@
           "chunksPaste": "Klistra in i delar (kommer snart)"
         }
       },
+      "liveModel": {
+        "label": "Livemodell",
+        "description": "Streamingmodell som visar livetext medan du pratar när transkriberingsmodellen (lokal eller i molnet) inte har någon egen. Den här texten kastas: det som klistras in kommer alltid från transkriberingsmodellen. Använder mer minne eftersom båda modellerna förblir inlästa.",
+        "off": "Av",
+        "none": "Ingen nedladdad modell stöder livestreaming"
+      },
       "acceleration": {
         "transcribe": {
           "title": "Whisper-acceleration",

@@ -618,6 +618,12 @@ pub struct AppSettings {
     /// preview worker for non-streaming models.
     #[serde(default)]
     pub live_mode: LiveMode,
+    /// Live model: a natively streaming model whose disposable live text is
+    /// shown while the transcription model — local or cloud — has no live text
+    /// of its own. The pasted text always comes from the transcription model.
+    /// Empty means off (the default).
+    #[serde(default)]
+    pub live_model: String,
     #[serde(default)]
     pub keyboard_implementation: KeyboardImplementation,
     #[serde(default = "default_show_tray_icon")]
@@ -1232,6 +1238,7 @@ pub fn get_default_settings() -> AppSettings {
         lazy_stream_close: false,
         stream_latency_preset: default_stream_latency_preset(),
         live_mode: LiveMode::default(),
+        live_model: String::new(),
         keyboard_implementation: KeyboardImplementation::default(),
         show_tray_icon: default_show_tray_icon(),
         paste_delay_ms: default_paste_delay_ms(),
@@ -2179,6 +2186,26 @@ mod tests {
             assert_eq!(json, serde_json::json!(wire));
             assert_eq!(serde_json::from_value::<LiveMode>(json).unwrap(), mode);
         }
+    }
+
+    /// A store written before `live_model` existed must load with the live
+    /// model off, and a chosen model id must round-trip unchanged.
+    #[test]
+    fn live_model_defaults_to_off_and_round_trips() {
+        let settings: AppSettings = serde_json::from_value(serde_json::json!({}))
+            .expect("a store missing the key must fall back to the default");
+        assert!(settings.live_model.is_empty());
+        assert!(get_default_settings().live_model.is_empty());
+        assert_eq!(default_settings_json()["live_model"], "");
+
+        let chosen = AppSettings {
+            live_model: "nemotron-streaming".to_string(),
+            ..get_default_settings()
+        };
+        let json = serde_json::to_value(&chosen).unwrap();
+        assert_eq!(json["live_model"], "nemotron-streaming");
+        let restored: AppSettings = serde_json::from_value(json).unwrap();
+        assert_eq!(restored.live_model, "nemotron-streaming");
     }
 
     /// Only Standard vs. non-Standard matters; ChunksPaste is reserved and
