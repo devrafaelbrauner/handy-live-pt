@@ -14,6 +14,7 @@ use crate::managers::transcription::{TextStage, TranscriptionDetail, Transcripti
 use crate::settings::{get_settings, AppSettings, VadBackend};
 use serde_json::json;
 use std::collections::HashSet;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -149,9 +150,11 @@ pub(crate) fn parse_manifest(text: &str, base_dir: &Path) -> Result<Vec<Manifest
 }
 
 /// Run the `--manifest` harness. Every WAV is checked before the model loads.
+/// Results go to `--out` (UTF-8 JSONL, flushed line by line) or stdout.
 /// Exit code: 0 when every utterance was transcribed, 1 on a runtime failure
-/// (VAD or model load, or any utterance — reported on its own line), 2 on bad
-/// input (unreadable manifest, invalid entry or WAV).
+/// (VAD or model load, writing results, or any utterance — reported on its own
+/// line), 2 on bad input (unreadable manifest, invalid entry or WAV, unwritable
+/// `--out`).
 pub(crate) fn run_manifest(app: &AppHandle, args: &CliArgs, manifest: &Path) -> i32 {
     let text = match std::fs::read_to_string(manifest) {
         Ok(text) => text,
@@ -178,6 +181,17 @@ pub(crate) fn run_manifest(app: &AppHandle, args: &CliArgs, manifest: &Path) -> 
     if invalid {
         return 2;
     }
+
+    let mut out: Box<dyn Write> = match &args.out {
+        Some(path) => match std::fs::File::create(path) {
+            Ok(file) => Box::new(std::io::BufWriter::new(file)),
+            Err(e) => {
+                eprintln!("error: cannot write {}: {}", path.display(), e);
+                return 2;
+            }
+        },
+        None => Box::new(std::io::stdout().lock()),
+    };
 
     let mut settings = get_settings(app);
     if let Some(language) = &args.language {
@@ -223,28 +237,38 @@ pub(crate) fn run_manifest(app: &AppHandle, args: &CliArgs, manifest: &Path) -> 
                 })
             }
         };
-        println!("{}", line);
+        if let Err(e) = write_line(&mut out, &line) {
+            eprintln!("error: cannot write results: {}", e);
+            return 1;
+        }
     }
 
-    println!(
-        "{}",
-        json!({
-            "type": "summary",
-            "model": model.id,
-            "requested_device": model.requested_device,
-            "bound_backend": model.bound_backend,
-            "load_ms": model.load_ms,
-            "language": settings.selected_language,
-            "vad": vad_name,
-            "utterances": entries.len(),
-            "failed": failed,
-        })
-    );
+    let summary = json!({
+        "type": "summary",
+        "model": model.id,
+        "requested_device": model.requested_device,
+        "bound_backend": model.bound_backend,
+        "load_ms": model.load_ms,
+        "language": settings.selected_language,
+        "vad": vad_name,
+        "utterances": entries.len(),
+        "failed": failed,
+    });
+    if let Err(e) = write_line(&mut out, &summary) {
+        eprintln!("error: cannot write results: {}", e);
+        return 1;
+    }
     if failed > 0 {
         1
     } else {
         0
     }
+}
+
+/// One JSONL line, flushed so a long run can be followed while it goes.
+fn write_line(out: &mut dyn Write, line: &serde_json::Value) -> std::io::Result<()> {
+    writeln!(out, "{}", line)?;
+    out.flush()
 }
 
 /// One utterance through the recording path: VAD (when on), the short-clip

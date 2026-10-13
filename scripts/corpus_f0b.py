@@ -14,6 +14,10 @@ no tempo (até --probe-window minutos) e, por bloco, as mais recentes preenchem
 as sondas em ordem cronológica. O arquivo serve tanto ao harness quanto ao
 scripts/f0a_metrics.py (--manifest).
 
+`status` e `export` leem o histórico do Handy Live PT em `%APPDATA%` no Windows,
+`~/Library/Application Support` no macOS e `$XDG_DATA_HOME` no Linux; numa
+instalação portátil, passe --db <pasta do app>/Data/history.db.
+
 A fonte de verdade são os arquivos docs/corpus-f0b/fonte/bNN.txt. Formato:
 
     # b01 | Título do bloco
@@ -34,6 +38,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -44,7 +49,20 @@ ROOT = Path(__file__).resolve().parent.parent
 CORPUS = ROOT / "docs" / "corpus-f0b"
 FONTE = CORPUS / "fonte"
 PAGE_TEMPLATE = Path(__file__).resolve().parent / "corpus_f0b_leitura.html"
-HANDY_DB = Path.home() / "Library/Application Support/com.rafael.handylive/history.db"
+
+
+def _default_handy_db() -> Path:
+    """history.db of Handy Live PT in the app data dir Tauri uses on this OS."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    return base / "com.rafael.handylive" / "history.db"
+
+
+HANDY_DB = _default_handy_db()
 
 # Ritmo de ditado lido (palavras/s), pausa marcada e custo fixo por fala
 # (ler o trecho, apertar, soltar, esperar colar). Calibrado para estimativa,

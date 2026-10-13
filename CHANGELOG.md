@@ -50,6 +50,12 @@ ainda não publicou release.
   do app por sessão, com press→1º frame, →1ª fala no VAD, →1º feed do engine,
   →1º texto ao vivo e release→texto final, →colar, mais modelo, caminho ao vivo
   e desfecho. Só medição, para diagnosticar a demora da 1ª palavra (issue #4).
+- Suporte ao Windows no harness e nos scripts da F0a (#17):
+  `handy --manifest … --out r.jsonl` grava os resultados em UTF-8 num arquivo,
+  porque o `handy.exe` é um programa gráfico e o PowerShell não espera nem
+  captura o stdout dele (rodar com `Start-Process -Wait`);
+  `scripts/corpus_f0b.py` lê o histórico do sistema em uso (`%APPDATA%` no
+  Windows) em vez do caminho do macOS.
 
 ### Changed
 
