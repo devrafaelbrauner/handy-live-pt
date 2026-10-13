@@ -11,9 +11,12 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
 
 ### Entrega e CI (alta)
 
-- [ ] PR #1 (rascunho do Copilot, atrás do `main`): outra abordagem para
-      builds sem credenciais de assinatura, problema já resolvido no `main`
-      pelo #6/#7. Decidir se fecha.
+- [ ] Release Windows: F2 (teste num PC Windows limpo) e F3 (versão
+      `0.9.6-1`, rascunho e publicação) de `docs/PLANO_RELEASE_WINDOWS.md`,
+      depois das decisões do plano. A tag `v0.9.6` herdada do upstream impede
+      publicar com a versão atual.
+- [ ] Release macOS: decisão de assinatura (M0) e M1–M4 de
+      `docs/PLANO_RELEASE_MACOS.md`.
 
 ### F0a — Harness mínimo (alta)
 
@@ -123,9 +126,6 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
 
 ### Fora do ULTRAPLAN (baixa)
 
-- [ ] `release.yml`, `build-test.yml` e `pr-test-build.yml` (só
-      `workflow_dispatch`) continuam com `sign-binaries: true`, caminho que
-      exige credenciais que o fork não tem.
 - [ ] `LiveMode::ChunksPaste` (T4): reservado, tratado como `Preview` no
       backend e desabilitado na UI (`settings.rs`, `LiveModeSetting.tsx`).
 
@@ -174,3 +174,12 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
       texto ao vivo a 1,9 s do início do clipe (mediana, inclui o silêncio
       inicial), 32–69 atualizações por fala; soltar → texto final 651 ms com
       Canary (sozinho: 677 ms; textos finais idênticos) e 1,87 s com turbo.
+- [x] 2026-10-13 — PR #1 (rascunho do Copilot, builds sem credenciais de
+      assinatura) fechado: já resolvido pelo #6/#7.
+- [x] 2026-10-13 — Release e builds de teste sem assinatura, `handy-live-pt.exe`
+      no Windows (instalar ou remover um app fechava o Handy oficial) e erro de
+      transcrição que abre a janela principal (#23): porta do
+      `handy-live-pt-cloud#3`.
+- [x] 2026-10-13 — Planos de release Windows e macOS (#24): porta do
+      `handy-live-pt-cloud#2` e `#4`. O `handy-live-pt-cloud` foi arquivado; os
+      PRs #1–#5 de lá foram fechados com link para a porta.
