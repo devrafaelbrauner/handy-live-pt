@@ -74,10 +74,10 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
 
 ### F6 — Ao vivo e energia (alta; decisão 4)
 
-- [ ] 2º slot de engine: Nemotron ao vivo + turbo final; ao soltar a tecla,
-      cancelar o stream e rodar o final.
+- [ ] Ditado real com o modelo ao vivo (#22): Nemotron ao vivo + Canary,
+      turbo ou nuvem como modelo final; ler as linhas `Latency trace` com
+      `live dual`.
 - [ ] Spike Apple SpeechTranscriber (ANE).
-- [ ] Harness de replay a 1× para medir o 1º parcial.
 - [ ] Camada C: troca ao desconectar da tomada, pré-carga em background e
       dispositivo por modelo (hoje o acelerador é global).
 
@@ -164,3 +164,13 @@ fases e prioridades abaixo seguem o §3 (fases) e o §6 (decisões de
       antes de falar.
 - [x] 2026-10-13 — Pós-processamento por LLM pulado sem prompt selecionado
       (#18) e harness enchendo o log do app (#19), achados no teste real.
+- [x] 2026-10-13 — Transcrição na nuvem no app (#21): porta do
+      `handy-live-pt-cloud#1`. turbo via OpenRouter no FLEURS (200 falas):
+      WER 6,1% e F1 de pontuação 70,7% (turbo local: 4,9% e 84,6%), 1,47 s
+      por fala (mediana), sem a lentidão da GPU.
+- [x] 2026-10-13 — F6: 2º slot de engine (modelo ao vivo + modelo final local
+      ou na nuvem) e harness de replay a 1× (`--live-model`, #22). Replay no
+      Windows (GTX 1060, 10 falas FLEURS, Silero, `pt`), Nemotron ao vivo: 1º
+      texto ao vivo a 1,9 s do início do clipe (mediana, inclui o silêncio
+      inicial), 32–69 atualizações por fala; soltar → texto final 651 ms com
+      Canary (sozinho: 677 ms; textos finais idênticos) e 1,87 s com turbo.

@@ -62,6 +62,20 @@ ainda não publicou release.
   16 kHz mono, divisão em partes acima de 5 min). As chaves são as mesmas do
   pós-processamento. Com a nuvem ligada, o modelo local não é carregado e não
   há texto ao vivo; o harness e o `--transcribe-file` continuam locais.
+- Modelo ao vivo (F6, #22): 2º slot de engine. Um modelo com streaming nativo
+  (configuração "Modelo ao vivo" em Avançado, `live_model`, desligada por
+  padrão) mostra o texto enquanto se fala quando o modelo de transcrição —
+  local ou na nuvem — não tem texto ao vivo próprio. Ao soltar a tecla, o
+  stream é cancelado (texto descartado) e o modelo de transcrição escreve o
+  texto colado. Ordem de cada gravação: streaming nativo do modelo selecionado
+  → modelo ao vivo (`dual` no `Latency trace`) → Pré-visualização → sem texto
+  ao vivo. Os dois modelos ficam carregados; o slot ao vivo é descarregado
+  junto com o principal e ao trocar ou apagar o modelo ao vivo.
+- Harness de replay a 1× (F6, #22): `handy --manifest … --live-model ID`
+  toca cada WAV em tempo real no stream ao vivo, passando pelo mesmo VAD do
+  gravador, cancela no fim e roda o passe final. Cada fala ganha
+  `live_first_text_ms`, `live_text`, `live_updates` e `release_to_final_ms`; o
+  resumo ganha `live_load_ms` e as medianas.
 
 ### Changed
 
