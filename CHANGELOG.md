@@ -77,6 +77,10 @@ ainda não publicou release.
   selecionado, o estado de uma instalação nova (#18): agora usa o prompt
   selecionado ou, sem seleção, o primeiro ("Improve Transcriptions"), e a tela
   de configurações mostra o prompt em uso.
+- Execuções headless (`--manifest`, `--transcribe-file`, `--list-*`) não
+  gravam mais no `handy.log` do app (#19): um benchmark enchia o arquivo, a
+  rotação apagava o log da sessão do usuário (inclusive as linhas
+  `Latency trace`). Os logs headless vão só para o stderr.
 
 ### Removed
 
