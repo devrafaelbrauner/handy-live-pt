@@ -892,13 +892,19 @@ jobs:
             }
           }
 
+          # Windows renames the main binary (tauri.windows.conf.json mainBinaryName)
+          # so the installer's running-app check never matches the official Handy's handy.exe.
+          $mainBinaryName = (Get-Content "src-tauri/tauri.windows.conf.json" -Raw | ConvertFrom-Json).mainBinaryName
+          if (-not $mainBinaryName) { $mainBinaryName = "handy" }
+          $exeName = "$mainBinaryName.exe"
+
           # Both installer types must contain every staged DLL and launch.
           function Assert-PackageContents {
             param([string]$Root, [string]$Label)
 
-            $handy = Get-ChildItem $Root -Filter "handy.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            $handy = Get-ChildItem $Root -Filter $exeName -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
             if (-not $handy) {
-              throw "$Label package is missing handy.exe"
+              throw "$Label package is missing $exeName"
             }
             foreach ($dll in $stagedDlls) {
               if (-not (Get-ChildItem $Root -Filter $dll.Name -Recurse -ErrorAction SilentlyContinue)) {
@@ -909,7 +915,7 @@ jobs:
             $deviceOutput = (& $handy.FullName --list-devices | Out-String)
             $deviceOutput | Write-Host
             if ($LASTEXITCODE -ne 0) {
-              throw "$Label handy.exe --list-devices failed"
+              throw "$Label $exeName --list-devices failed"
             }
             if ("${{ inputs.target }}" -like "aarch64*" -and $deviceOutput -match "kind=(vulkan|cuda|metal|gpu)") {
               throw "$Label Windows ARM64 package unexpectedly exposed a GPU compute device"

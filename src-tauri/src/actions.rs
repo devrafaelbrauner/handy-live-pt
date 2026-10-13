@@ -1064,6 +1064,14 @@ impl ShortcutAction for TranscribeAction {
                             error!("Transcription failed: {}", err);
                             // Surface the failure to the UI (toast). The full
                             // message is also in handy.log via the line above.
+                            // The toast renders in the main window, which the
+                            // tray workflow keeps hidden: show it first so a
+                            // rejected key, missing credits or a dropped
+                            // connection is actually seen.
+                            let ah_for_window = ah.clone();
+                            let _ = ah.run_on_main_thread(move || {
+                                crate::show_main_window(&ah_for_window)
+                            });
                             let _ = ah.emit("transcription-error", err.to_string());
                             // Save entry with empty text so user can retry
                             if wav_saved {

@@ -76,6 +76,11 @@ ainda não publicou release.
   gravador, cancela no fim e roda o passe final. Cada fala ganha
   `live_first_text_ms`, `live_text`, `live_updates` e `release_to_final_ms`; o
   resumo ganha `live_load_ms` e as medianas.
+- Seção "Instalar no Windows" no README (porta do `handy-live-pt-cloud#3`):
+  instaladores, SmartScreen, WebView2, microfone, pastas, GPU, convivência com
+  o Handy oficial, atualização e desinstalação. O README também passa a usar os
+  caminhos `com.rafael.handylive` e avisa que os releases do fork não publicam
+  `.sig`.
 
 ### Changed
 
@@ -90,6 +95,10 @@ ainda não publicou release.
   temporária do `Entitlements.plist` recebe
   `com.apple.security.cs.disable-library-validation`; o hardened runtime
   continua ligado e uma guarda de inicialização roda `handy --help`.
+- Release, "PR Test Build" e "Build Test" sem assinatura (porta do
+  `handy-live-pt-cloud#3`): `sign-binaries: false`, como no "Main Branch
+  Build". Com `true`, os jobs macOS falhavam sem os segredos da Apple. O
+  `release.yml` mantém todas as plataformas e o release continua em rascunho.
 
 ### Fixed
 
@@ -101,6 +110,18 @@ ainda não publicou release.
   gravam mais no `handy.log` do app (#19): um benchmark enchia o arquivo, a
   rotação apagava o log da sessão do usuário (inclusive as linhas
   `Latency trace`). Os logs headless vão só para o stderr.
+- No Windows o executável passa a se chamar `handy-live-pt.exe` (porta do
+  `handy-live-pt-cloud#3`, `mainBinaryName` em `tauri.windows.conf.json`). O
+  instalador e o desinstalador NSIS fecham todo processo com o nome do
+  executável; com os dois apps como `handy.exe`, instalar ou remover um fechava
+  o outro. Só uma vez: ao instalar por cima de um build com `handy.exe`, feche
+  o Handy Live PT antes, porque o instalador novo não fecha o processo antigo.
+- Link de releases da instalação portátil apontava para `cjpais/Handy`; agora
+  aponta para `devrafaelbrauner/handy-live-pt` (porta do
+  `handy-live-pt-cloud#3`).
+- Erro de transcrição invisível no uso pela bandeja (porta do
+  `handy-live-pt-cloud#3`): o aviso aparece na janela principal, que fica
+  oculta. Agora a janela principal é mostrada antes do aviso.
 
 ### Removed
 
