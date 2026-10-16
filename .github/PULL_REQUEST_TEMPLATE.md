@@ -18,16 +18,12 @@ BUG FIXES ARE THE TOP PRIORITY. THERE ARE 60+ ISSUES TO FIX.
 - [ ] I have explained in the description below why this should be reconsidered
 - [ ] I have gathered community feedback (link to discussion below)
 
-## Human Written Description
+## Description
 
-<!-- Describe your changes clearly and concisely
-
-Please write 2-3 sentences in your own words explaining:
+<!-- Describe your changes clearly and concisely:
 - What problem you noticed or idea you had
 - Why you think this change matters
-
-This section should be YOUR thinking, not AI-generated text. Even if AI helped write the code, we want to hear from you directly. Your perspective as a human is what makes contributions meaningful. Your PR may be rejected if you do not
-include a human-written description.
+- What the change does
 -->
 
 ## Related Issues/Discussions
