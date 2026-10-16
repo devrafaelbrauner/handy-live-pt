@@ -232,7 +232,10 @@ fn flush_pending() {
     if previous.auto_submit && receipt {
         send_auto_submit(&previous);
     }
-    let sequence = *previous.sequence.lock().unwrap();
+    let sequence = match previous.sequence.lock() {
+        Ok(sequence) => *sequence,
+        Err(_) => return,
+    };
     let still_ours = unsafe { GetClipboardSequenceNumber() } == sequence;
     if still_ours {
         unsafe { settle_clipboard(&previous) };
@@ -460,8 +463,14 @@ fn on_timer(_hwnd: HWND, shared: &WinTxShared) {
         send_auto_submit(shared);
     }
 
-    let sequence = *shared.sequence.lock().unwrap();
-    let still_ours = !ownership_lost && unsafe { GetClipboardSequenceNumber() } == sequence;
+    let sequence_matches = match shared.sequence.lock() {
+        Ok(sequence) => {
+            let current = unsafe { GetClipboardSequenceNumber() };
+            current == *sequence
+        }
+        Err(_) => false,
+    };
+    let still_ours = !ownership_lost && sequence_matches;
     if still_ours {
         unsafe { settle_clipboard(shared) };
     } else {
@@ -553,8 +562,12 @@ fn pump_thread(shared: Arc<WinTxShared>, ready: Sender<Result<(), String>>) {
                 return;
             }
         };
-        *shared.sequence.lock().unwrap() = sequence;
-        shared.state.lock().unwrap().published_at = Instant::now();
+        if let Ok(mut slot) = shared.sequence.lock() {
+            *slot = sequence;
+        }
+        if let Ok(mut st) = shared.state.lock() {
+            st.published_at = Instant::now();
+        }
         if let Ok(mut slot) = PENDING.lock() {
             *slot = Some(shared.clone());
         }
@@ -607,7 +620,9 @@ pub(super) fn run(
 
     // Mark injection *before* sending: enigo holds the chord for ~100ms and a
     // fast target may legitimately read while the chord is still held.
-    shared.state.lock().unwrap().injected_at = Some(Instant::now());
+    if let Ok(mut st) = shared.state.lock() {
+        st.injected_at = Some(Instant::now());
+    }
     match send_chord(enigo, paste_method) {
         Ok(()) => {
             info!("[reliable-paste] paste chord sent ({paste_method:?})");
@@ -615,7 +630,9 @@ pub(super) fn run(
         Err(e) => {
             // Keep the transaction alive: the worker restores the clipboard
             // after the short failed-injection timeout.
-            shared.state.lock().unwrap().injection_failed = true;
+            if let Ok(mut st) = shared.state.lock() {
+                st.injection_failed = true;
+            }
             error!("[reliable-paste] failed to send paste chord: {e}");
         }
     }
