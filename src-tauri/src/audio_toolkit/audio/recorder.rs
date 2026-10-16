@@ -548,9 +548,12 @@ impl AudioRecorder {
         let written = if writable_frames == 0 {
             0
         } else {
-            let chunk = producer
-                .write_chunk_uninit(writable_frames)
-                .expect("the producer just reported this many writable slots");
+            let Ok(chunk) = producer.write_chunk_uninit(writable_frames) else {
+                transport
+                    .overrun_samples
+                    .fetch_add(frame_count as u64, Ordering::Relaxed);
+                return;
+            };
             if channels == 1 {
                 chunk.fill_from_iter(
                     data.iter()
